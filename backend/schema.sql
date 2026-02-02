@@ -1,0 +1,47 @@
+-- Tentak schema (SQLite)
+-- Source of truth for tasks, events, reminders.
+-- Enums enforced via CHECK constraints.
+
+-- Task: something the user wants done. May or may not have dates.
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'waiting', 'completed', 'cancelled')),
+  kind TEXT NOT NULL CHECK (kind IN ('scheduled', 'backlog', 'external_dependency', 'someday')),
+  priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high')),
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  related_event_id INTEGER,
+  external_owner TEXT
+);
+
+-- Event: something that happens at a specific time.
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  location TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('meeting', 'personal', 'reminder', 'block')),
+  created_at TEXT NOT NULL,
+  related_task_id INTEGER
+);
+
+-- Reminder: notification relative to an event or task.
+CREATE TABLE IF NOT EXISTS reminders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_type TEXT NOT NULL CHECK (target_type IN ('task', 'event')),
+  target_id INTEGER NOT NULL,
+  offset_minutes INTEGER NOT NULL,
+  delivered_at TEXT
+);
+
+-- Note (v2): free-form text attached to tasks, events, or days. Optional for v1.
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  body TEXT NOT NULL,
+  attached_type TEXT NOT NULL,
+  attached_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);

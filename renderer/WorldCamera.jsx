@@ -16,7 +16,7 @@ function WorldCamera({ children }) {
         maxScale={3}
         panning={{
           allowLeftClickPan: true,
-          excluded: ['input', 'textarea', 'select', 'button', 'task-card'],
+          excluded: ['input', 'textarea', 'select', 'button', 'task-card', 'table-header'],
         }}
         wheel={{ step: 0.1 }}
       >
@@ -30,8 +30,10 @@ function WorldCamera({ children }) {
         >
           <div
             style={{
-              width: '3000px',
-              height: '3000px',
+              width: '3300px',
+              height: '3300px',
+              padding: '150px',
+              boxSizing: 'border-box',
               background: '#fafafa',
               position: 'relative',
             }}

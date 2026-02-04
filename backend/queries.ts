@@ -33,6 +33,19 @@ export function getTasksBacklog(db: Db): Task[] {
 }
 
 /**
+ * Scheduled tasks: tasks with kind = 'scheduled' (Today table).
+ */
+export function getTasksScheduled(db: Db): Task[] {
+  const stmt = db.prepare(`
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner
+    FROM tasks
+    WHERE kind = 'scheduled'
+    ORDER BY created_at
+  `);
+  return stmt.all() as Task[];
+}
+
+/**
  * Tasks waiting on others: tasks with status = 'waiting'.
  */
 export function getTasksWaiting(db: Db): Task[] {

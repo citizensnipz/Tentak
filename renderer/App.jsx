@@ -4,16 +4,15 @@ import WorldCamera from './WorldCamera.jsx';
 const CARD_WIDTH = 220;
 const CARD_HEIGHT = 110;
 const CARD_GAP = 40;
-const GRID_COLUMNS = 4;
-const INITIAL_OFFSET_X = 200;
-const INITIAL_OFFSET_Y = 200;
+const TABLE_HEADER_HEIGHT = 36;
+const TABLE_CARD_INSET = 16;
 
-function computeInitialPosition(index) {
-  const col = index % GRID_COLUMNS;
-  const row = Math.floor(index / GRID_COLUMNS);
+function computeInitialPositionInTable(indexInTable, table) {
+  const col = indexInTable % 2;
+  const row = Math.floor(indexInTable / 2);
   return {
-    x: INITIAL_OFFSET_X + col * (CARD_WIDTH + CARD_GAP),
-    y: INITIAL_OFFSET_Y + row * (CARD_HEIGHT + CARD_GAP),
+    x: table.x + TABLE_CARD_INSET + col * (CARD_WIDTH + CARD_GAP),
+    y: table.y + TABLE_HEADER_HEIGHT + TABLE_CARD_INSET + row * (CARD_HEIGHT + CARD_GAP),
   };
 }
 
@@ -241,7 +240,52 @@ function TaskCard({
   );
 }
 
-const NEW_TASK_POSITION = { x: 500, y: 500 };
+const DEFAULT_TABLES = [
+  { id: 'backlog', title: 'Backlog', x: 150, y: 150, width: 600, height: 400 },
+  { id: 'today', title: 'Today', x: 850, y: 150, width: 600, height: 400 },
+];
+
+function Table({ table, onHeaderPointerDown, onHeaderPointerMove, onHeaderPointerUp, onHeaderPointerCancel }) {
+  return (
+    <div
+      data-table-id={table.id}
+      data-table-width={table.width}
+      style={{
+        position: 'absolute',
+        left: table.x,
+        top: table.y,
+        width: table.width,
+        height: table.height,
+        backgroundColor: '#e8e8e8',
+        borderRadius: 8,
+        overflow: 'hidden',
+        zIndex: 0,
+        fontFamily: 'sans-serif',
+      }}
+    >
+      <div
+        className="table-header"
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerCancel}
+        style={{
+          height: 36,
+          padding: '0 12px',
+          backgroundColor: '#c4c4c4',
+          display: 'flex',
+          alignItems: 'center',
+          cursor: 'grab',
+          userSelect: 'none',
+          touchAction: 'none',
+        }}
+      >
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{table.title}</span>
+      </div>
+      <div style={{ flex: 1, height: table.height - 36 }} />
+    </div>
+  );
+}
 
 function CreateTaskModal({ onClose, onSubmit }) {
   const [title, setTitle] = useState('');
@@ -424,9 +468,97 @@ function AddButton({ onClick }) {
   );
 }
 
-function WorldStage({ tasks, positions, setPositions, loading, error, onDelete, onUpdate }) {
+const TABLE_ID_TO_KIND = { backlog: 'backlog', today: 'scheduled' };
+const KIND_TO_TABLE_ID = { backlog: 'backlog', scheduled: 'today', waiting: 'backlog', external_dependency: 'backlog', someday: 'backlog' };
+
+function pointInTable(px, py, table) {
+  return px >= table.x && px <= table.x + table.width && py >= table.y && py <= table.y + table.height;
+}
+
+function WorldStage({ tasks, positions, setPositions, tables, setTables, loading, error, onDelete, onUpdate, onTaskTableChange }) {
   const dragInfoRef = useRef(null);
+  const tableDragInfoRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
+  const [draggingTableId, setDraggingTableId] = useState(null);
+
+  const handleTableHeaderPointerDown = useCallback(
+    (tableId) => (event) => {
+      if (event.button !== 0) return;
+      const table = tables.find((t) => t.id === tableId);
+      if (!table) return;
+
+      event.stopPropagation();
+      event.preventDefault();
+
+      tableDragInfoRef.current = {
+        tableId,
+        pointerId: event.pointerId,
+        pointerStart: { x: event.clientX, y: event.clientY },
+        tableStart: { x: table.x, y: table.y },
+      };
+
+      setDraggingTableId(tableId);
+
+      if (event.currentTarget.setPointerCapture) {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch (err) {}
+      }
+    },
+    [tables],
+  );
+
+  const handleTableHeaderPointerMove = useCallback(
+    (tableId) => (event) => {
+      const info = tableDragInfoRef.current;
+      if (!info || info.tableId !== tableId || info.pointerId !== event.pointerId) return;
+
+      event.stopPropagation();
+      event.preventDefault();
+
+      const tableEl = event.currentTarget.closest('[data-table-id]');
+      const scale = tableEl
+        ? (tableEl.getBoundingClientRect?.()?.width || 1) / (parseFloat(tableEl.getAttribute('data-table-width')) || 1)
+        : 1;
+      const s = scale || 1;
+      const dx = (event.clientX - info.pointerStart.x) / s;
+      const dy = (event.clientY - info.pointerStart.y) / s;
+
+      setTables((prev) =>
+        prev.map((t) =>
+          t.id === tableId ? { ...t, x: info.tableStart.x + dx, y: info.tableStart.y + dy } : t
+        )
+      );
+    },
+    [setTables],
+  );
+
+  const finishTableDrag = useCallback((tableId, event) => {
+    const info = tableDragInfoRef.current;
+    if (!info || info.tableId !== tableId || info.pointerId !== event.pointerId) return;
+
+    event.stopPropagation();
+    event.preventDefault();
+
+    if (event.currentTarget.releasePointerCapture) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch (err) {}
+    }
+
+    tableDragInfoRef.current = null;
+    setDraggingTableId(null);
+  }, []);
+
+  const handleTableHeaderPointerUp = useCallback(
+    (tableId) => (event) => finishTableDrag(tableId, event),
+    [finishTableDrag],
+  );
+
+  const handleTableHeaderPointerCancel = useCallback(
+    (tableId) => (event) => finishTableDrag(tableId, event),
+    [finishTableDrag],
+  );
 
   const handlePointerDown = useCallback(
     (taskId) => (event) => {
@@ -502,18 +634,36 @@ function WorldStage({ tasks, positions, setPositions, loading, error, onDelete, 
       event.stopPropagation();
       event.preventDefault();
 
+      const scale = computeScale(event.currentTarget) || info.scale || 1;
+      const dx = (event.clientX - info.pointerStart.x) / scale;
+      const dy = (event.clientY - info.pointerStart.y) / scale;
+      const finalPos = { x: info.cardStart.x + dx, y: info.cardStart.y + dy };
+
+      if (onTaskTableChange && tables.length > 0) {
+        const cx = finalPos.x + CARD_WIDTH / 2;
+        const cy = finalPos.y + 80 / 2;
+        for (const table of tables) {
+          if (pointInTable(cx, cy, table)) {
+            const task = tasks.find((t) => t.id === taskId);
+            const currentTableId = task ? (KIND_TO_TABLE_ID[task.kind] || 'backlog') : 'backlog';
+            if (currentTableId !== table.id) {
+              onTaskTableChange(taskId, table.id);
+            }
+            break;
+          }
+        }
+      }
+
       if (event.currentTarget.releasePointerCapture) {
         try {
           event.currentTarget.releasePointerCapture(event.pointerId);
-        } catch (err) {
-          // Ignore release errors in unsupported environments.
-        }
+        } catch (err) {}
       }
 
       dragInfoRef.current = null;
       setDraggingId(null);
     },
-    [],
+    [tables, tasks, onTaskTableChange],
   );
 
   const handlePointerUp = useCallback(
@@ -573,6 +723,16 @@ function WorldStage({ tasks, positions, setPositions, loading, error, onDelete, 
           {error}
         </div>
       )}
+      {tables.map((table) => (
+        <Table
+          key={table.id}
+          table={table}
+          onHeaderPointerDown={handleTableHeaderPointerDown(table.id)}
+          onHeaderPointerMove={handleTableHeaderPointerMove(table.id)}
+          onHeaderPointerUp={handleTableHeaderPointerUp(table.id)}
+          onHeaderPointerCancel={handleTableHeaderPointerCancel(table.id)}
+        />
+      ))}
       {tasks.map((task) => {
         const position = positions[task.id];
         if (!position) return null;
@@ -601,7 +761,7 @@ function App() {
   const [error, setError] = useState(null);
   const [positions, setPositions] = useState({});
 
-  const fetchBacklog = useCallback(() => {
+  const fetchTasks = useCallback(() => {
     if (typeof window === 'undefined' || typeof window.tentak === 'undefined') {
       setError('window.tentak not available');
       setLoading(false);
@@ -611,13 +771,17 @@ function App() {
     setLoading(true);
     setError(null);
 
-    window.tentak
-      .query({ type: 'tasksBacklog' })
-      .then((response) => {
-        if (response.ok) {
-          setTasks(response.data);
+    Promise.all([
+      window.tentak.query({ type: 'tasksBacklog' }),
+      window.tentak.query({ type: 'tasksScheduled' }),
+    ])
+      .then(([backlogRes, scheduledRes]) => {
+        const backlog = backlogRes.ok ? backlogRes.data : [];
+        const scheduled = scheduledRes.ok ? scheduledRes.data : [];
+        if (!backlogRes.ok && !scheduledRes.ok) {
+          setError(backlogRes.error || scheduledRes.error || 'Failed to load tasks');
         } else {
-          setError(response.error || 'Failed to load tasks');
+          setTasks([...backlog, ...scheduled]);
         }
       })
       .catch((err) => {
@@ -629,17 +793,22 @@ function App() {
   }, []);
 
   useEffect(() => {
-    fetchBacklog();
-  }, [fetchBacklog]);
+    fetchTasks();
+  }, [fetchTasks]);
 
   useEffect(() => {
     setPositions((prev) => {
       const next = {};
-      tasks.forEach((task, index) => {
+      const tableCounts = { backlog: 0, today: 0 };
+      tasks.forEach((task) => {
         if (prev[task.id]) {
           next[task.id] = prev[task.id];
         } else {
-          next[task.id] = computeInitialPosition(index);
+          const tableId = KIND_TO_TABLE_ID[task.kind] || 'backlog';
+          const table = DEFAULT_TABLES.find((t) => t.id === tableId) || DEFAULT_TABLES[0];
+          const idx = tableCounts[tableId] ?? 0;
+          next[task.id] = computeInitialPositionInTable(idx, table);
+          tableCounts[tableId] = idx + 1;
         }
       });
       return next;
@@ -647,6 +816,7 @@ function App() {
   }, [tasks]);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [tables, setTables] = useState(DEFAULT_TABLES);
 
   const handleCreateTask = useCallback(({ title, description }) => {
     if (typeof window.tentak === 'undefined') {
@@ -667,7 +837,6 @@ function App() {
         if (!r.ok) throw new Error(r.error || 'Failed to create task');
         const newTask = r.data;
         setTasks((prev) => [...prev, newTask]);
-        setPositions((prev) => ({ ...prev, [newTask.id]: NEW_TASK_POSITION }));
       });
   }, []);
 
@@ -687,15 +856,13 @@ function App() {
       });
   }, []);
 
-  const handleUpdateTask = useCallback((id, { title, description }) => {
+  const handleUpdateTask = useCallback((id, updates) => {
     if (typeof window.tentak === 'undefined') return;
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, title, description } : t
-      )
+      prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
     );
     window.tentak
-      .mutate({ operation: 'taskUpdate', payload: { id, title, description } })
+      .mutate({ operation: 'taskUpdate', payload: { id, ...updates } })
       .then((r) => {
         if (r.ok && r.data) {
           setTasks((prev) =>
@@ -705,6 +872,14 @@ function App() {
       });
   }, []);
 
+  const handleTaskTableChange = useCallback(
+    (id, tableId) => {
+      const kind = TABLE_ID_TO_KIND[tableId];
+      if (kind) handleUpdateTask(id, { kind });
+    },
+    [handleUpdateTask],
+  );
+
   return (
     <>
       <WorldCamera>
@@ -712,10 +887,13 @@ function App() {
           tasks={tasks}
           positions={positions}
           setPositions={setPositions}
+          tables={tables}
+          setTables={setTables}
           loading={loading}
           error={error}
           onDelete={handleDeleteTask}
           onUpdate={handleUpdateTask}
+          onTaskTableChange={handleTaskTableChange}
         />
       </WorldCamera>
       <AddButton onClick={() => setModalOpen(true)} />

@@ -6,6 +6,7 @@ export { openDb, type Db } from './db.js';
 export {
   getScheduleToday,
   getTasksBacklog,
+  getTasksScheduled,
   getTasksWaiting,
 } from './queries.js';
 export {

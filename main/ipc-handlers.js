@@ -6,6 +6,7 @@ import { ipcMain } from 'electron';
 import {
   getScheduleToday,
   getTasksBacklog,
+  getTasksScheduled,
   getTasksWaiting,
   createTask,
   updateTask,
@@ -18,7 +19,7 @@ import {
   deleteReminder,
 } from '../backend/dist/backend/index.js';
 
-const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksWaiting'];
+const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting'];
 const MUTATE_OPERATIONS = [
   'taskCreate',
   'taskUpdate',
@@ -60,6 +61,8 @@ export function registerIpcHandlers(db) {
         }
         case 'tasksBacklog':
           return getTasksBacklog(db);
+        case 'tasksScheduled':
+          return getTasksScheduled(db);
         case 'tasksWaiting':
           return getTasksWaiting(db);
         default:

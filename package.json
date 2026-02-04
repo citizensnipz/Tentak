@@ -5,18 +5,25 @@
   "main": "main/main.js",
   "type": "module",
   "scripts": {
-    "build": "tsc -p backend/tsconfig.json",
+    "build": "npm run build:backend && npm run build:renderer",
+    "build:backend": "tsc -p backend/tsconfig.json",
+    "build:renderer": "vite build",
     "typecheck": "tsc -p backend/tsconfig.json --noEmit",
     "start": "electron .",
     "rebuild": "electron-rebuild"
   },
   "dependencies": {
     "better-sqlite3": "^11.6.0",
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-zoom-pan-pinch": "^3.7.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
+    "@vitejs/plugin-react": "^4.3.4",
     "electron-rebuild": "^3.2.9",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
   }
 }

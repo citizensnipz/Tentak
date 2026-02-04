@@ -20,10 +20,13 @@ function createWindow() {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Allow loading file:// so the built renderer (renderer/dist) loads in Electron
+      webSecurity: false,
     },
   });
 
-  mainWindow.loadFile(join(__dirname, 'index.html'));
+  const indexPath = join(__dirname, '..', 'renderer', 'dist', 'index.html');
+  mainWindow.loadFile(indexPath);
 }
 
 app.whenReady().then(() => {

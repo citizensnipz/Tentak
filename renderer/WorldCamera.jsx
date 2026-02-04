@@ -15,9 +15,8 @@ function WorldCamera({ children }) {
         minScale={0.5}
         maxScale={3}
         panning={{
-          activationKeys: [' ', 'Space'],
           allowLeftClickPan: true,
-          excluded: ['input', 'textarea', 'select', 'button'],
+          excluded: ['input', 'textarea', 'select', 'button', 'task-card'],
         }}
         wheel={{ step: 0.1 }}
       >

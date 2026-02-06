@@ -1,16 +1,8 @@
-import React from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 function WorldCamera({ children }) {
   return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        overflow: 'hidden',
-        position: 'relative',
-      }}
-    >
+    <div className="w-screen h-screen overflow-hidden relative">
       <TransformWrapper
         minScale={0.5}
         maxScale={3}
@@ -28,16 +20,7 @@ function WorldCamera({ children }) {
             minHeight: '100%',
           }}
         >
-          <div
-            style={{
-              width: '3300px',
-              height: '3300px',
-              padding: '150px',
-              boxSizing: 'border-box',
-              background: '#fafafa',
-              position: 'relative',
-            }}
-          >
+          <div className="w-[3300px] h-[3300px] p-[150px] box-border bg-muted/30 relative">
             {children}
           </div>
         </TransformComponent>

@@ -18,6 +18,8 @@ export interface Task {
   completed_at: string | null;
   related_event_id: number | null;
   external_owner: string | null;
+  color: string | null;
+  table_id: string | null;
 }
 
 export type EventKind = 'meeting' | 'personal' | 'reminder' | 'block';
@@ -50,4 +52,15 @@ export interface Note {
   attached_type: string;
   attached_id: number;
   created_at: string;
+}
+
+export interface Table {
+  id: string;
+  title: string;
+  color: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  is_permanent: number;
 }

@@ -8,6 +8,8 @@ import {
   getTasksBacklog,
   getTasksScheduled,
   getTasksWaiting,
+  getAllTables,
+  getAllTasks,
   createTask,
   updateTask,
   deleteTask,
@@ -17,9 +19,12 @@ import {
   createReminder,
   updateReminder,
   deleteReminder,
+  createTable,
+  updateTable,
+  deleteTable,
 } from '../backend/dist/backend/index.js';
 
-const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting'];
+const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting', 'allTables', 'allTasks'];
 const MUTATE_OPERATIONS = [
   'taskCreate',
   'taskUpdate',
@@ -30,6 +35,9 @@ const MUTATE_OPERATIONS = [
   'reminderCreate',
   'reminderUpdate',
   'reminderDelete',
+  'tableCreate',
+  'tableUpdate',
+  'tableDelete',
 ];
 
 function wrap(handler) {
@@ -65,6 +73,10 @@ export function registerIpcHandlers(db) {
           return getTasksScheduled(db);
         case 'tasksWaiting':
           return getTasksWaiting(db);
+        case 'allTables':
+          return getAllTables(db);
+        case 'allTasks':
+          return getAllTasks(db);
         default:
           throw new Error(`Unknown query type: ${type}`);
       }
@@ -119,6 +131,19 @@ export function registerIpcHandlers(db) {
           const id = opPayload.id;
           if (id == null) throw new Error('reminderDelete requires id');
           deleteReminder(db, Number(id));
+          return null;
+        }
+        case 'tableCreate':
+          return createTable(db, opPayload);
+        case 'tableUpdate': {
+          const { id, ...data } = opPayload;
+          if (id == null) throw new Error('tableUpdate requires id');
+          return updateTable(db, String(id), data);
+        }
+        case 'tableDelete': {
+          const id = opPayload.id;
+          if (id == null) throw new Error('tableDelete requires id');
+          deleteTable(db, String(id));
           return null;
         }
         default:

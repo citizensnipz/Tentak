@@ -29,7 +29,53 @@ export function openDb(dbPath: string): Db {
   if (!tableExists) {
     const schema = readFileSync(SCHEMA_PATH, 'utf-8');
     db.exec(schema);
+    initializePermanentTables(db);
+  } else {
+    try {
+      db.exec('ALTER TABLE tasks ADD COLUMN color TEXT');
+    } catch {
+      /* column already exists */
+    }
+    try {
+      db.exec('ALTER TABLE tasks ADD COLUMN table_id TEXT');
+    } catch {
+      /* column already exists */
+    }
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS tables (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          color TEXT,
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          width REAL NOT NULL,
+          height REAL NOT NULL,
+          is_permanent INTEGER NOT NULL DEFAULT 0
+        )
+      `);
+      initializePermanentTables(db);
+    } catch {
+      /* table already exists */
+    }
   }
 
   return db;
+}
+
+function initializePermanentTables(db: Db): void {
+  const backlogExists = db.prepare('SELECT id FROM tables WHERE id = ?').get('backlog');
+  if (!backlogExists) {
+    db.prepare(`
+      INSERT INTO tables (id, title, color, x, y, width, height, is_permanent)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('backlog', 'Backlog', null, 150, 150, 600, 400, 1);
+  }
+  const todayExists = db.prepare('SELECT id FROM tables WHERE id = ?').get('today');
+  if (!todayExists) {
+    db.prepare(`
+      INSERT INTO tables (id, title, color, x, y, width, height, is_permanent)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('today', 'Today', null, 850, 150, 600, 400, 1);
+  }
 }

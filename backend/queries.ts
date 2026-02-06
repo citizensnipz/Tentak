@@ -3,7 +3,7 @@
  */
 
 import type { Db } from './db.js';
-import type { Event, Task } from '../shared/types.js';
+import type { Event, Task, Table } from '../shared/types.js';
 
 /**
  * Today's schedule: events that overlap the given date (YYYY-MM-DD).
@@ -24,7 +24,7 @@ export function getScheduleToday(db: Db, date: string): Event[] {
  */
 export function getTasksBacklog(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
     FROM tasks
     WHERE kind = 'backlog'
     ORDER BY created_at
@@ -37,7 +37,7 @@ export function getTasksBacklog(db: Db): Task[] {
  */
 export function getTasksScheduled(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
     FROM tasks
     WHERE kind = 'scheduled'
     ORDER BY created_at
@@ -50,9 +50,33 @@ export function getTasksScheduled(db: Db): Task[] {
  */
 export function getTasksWaiting(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
     FROM tasks
     WHERE status = 'waiting'
+    ORDER BY created_at
+  `);
+  return stmt.all() as Task[];
+}
+
+/**
+ * All tables: returns all tables from the database.
+ */
+export function getAllTables(db: Db): Table[] {
+  const stmt = db.prepare(`
+    SELECT id, title, color, x, y, width, height, is_permanent
+    FROM tables
+    ORDER BY is_permanent DESC, id
+  `);
+  return stmt.all() as Table[];
+}
+
+/**
+ * All tasks: returns all tasks from the database.
+ */
+export function getAllTasks(db: Db): Task[] {
+  const stmt = db.prepare(`
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
+    FROM tasks
     ORDER BY created_at
   `);
   return stmt.all() as Task[];

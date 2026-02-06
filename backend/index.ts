@@ -8,6 +8,8 @@ export {
   getTasksBacklog,
   getTasksScheduled,
   getTasksWaiting,
+  getAllTables,
+  getAllTasks,
 } from './queries.js';
 export {
   createTask,
@@ -19,10 +21,15 @@ export {
   createReminder,
   updateReminder,
   deleteReminder,
+  createTable,
+  updateTable,
+  deleteTable,
   type TaskInsert,
   type TaskUpdate,
   type EventInsert,
   type EventUpdate,
   type ReminderInsert,
   type ReminderUpdate,
+  type TableInsert,
+  type TableUpdate,
 } from './crud.js';

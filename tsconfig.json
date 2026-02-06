@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./renderer/*"]
+    }
+  },
+  "include": ["renderer"]
+}

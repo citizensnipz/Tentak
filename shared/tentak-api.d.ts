@@ -5,15 +5,17 @@
 
 import type { Event, Task } from './types.js';
 
-export type QueryType = 'scheduleToday' | 'tasksBacklog' | 'tasksScheduled' | 'tasksWaiting';
+export type QueryType = 'scheduleToday' | 'tasksBacklog' | 'tasksScheduled' | 'tasksWaiting' | 'allTables' | 'allTasks';
 
 export type QueryPayload = {
   type: QueryType;
   params?: { date?: string };
 };
 
+import type { Table } from './types.js';
+
 export type QueryResult =
-  | { ok: true; data: Event[] | Task[] }
+  | { ok: true; data: Event[] | Task[] | Table[] }
   | { ok: false; error: string };
 
 export type MutateOperation =
@@ -25,7 +27,10 @@ export type MutateOperation =
   | 'eventDelete'
   | 'reminderCreate'
   | 'reminderUpdate'
-  | 'reminderDelete';
+  | 'reminderDelete'
+  | 'tableCreate'
+  | 'tableUpdate'
+  | 'tableDelete';
 
 export type MutatePayload = {
   operation: MutateOperation;

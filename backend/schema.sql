@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at TEXT NOT NULL,
   completed_at TEXT,
   related_event_id INTEGER,
-  external_owner TEXT
+  external_owner TEXT,
+  color TEXT,
+  table_id TEXT
 );
 
 -- Event: something that happens at a specific time.
@@ -44,4 +46,16 @@ CREATE TABLE IF NOT EXISTS notes (
   attached_type TEXT NOT NULL,
   attached_id INTEGER NOT NULL,
   created_at TEXT NOT NULL
+);
+
+-- Table: grouping area on the board for organizing tasks.
+CREATE TABLE IF NOT EXISTS tables (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  color TEXT,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  width REAL NOT NULL,
+  height REAL NOT NULL,
+  is_permanent INTEGER NOT NULL DEFAULT 0
 );

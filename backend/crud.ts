@@ -12,6 +12,7 @@ import type {
   EventKind,
   Reminder,
   ReminderTargetType,
+  Table,
 } from '../shared/types.js';
 
 const TASK_STATUSES: TaskStatus[] = [
@@ -59,8 +60,8 @@ export function createTask(
 
   const created_at = data.created_at ?? new Date().toISOString();
   const stmt = db.prepare(`
-    INSERT INTO tasks (title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     data.title.trim(),
@@ -71,7 +72,9 @@ export function createTask(
     created_at,
     data.completed_at ?? null,
     data.related_event_id ?? null,
-    data.external_owner ?? null
+    data.external_owner ?? null,
+    data.color ?? null,
+    data.table_id ?? null
   );
   const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task;
   return row;
@@ -96,7 +99,7 @@ export function updateTask(db: Db, id: number, data: TaskUpdate): Task {
     id: existing.id,
   };
   db.prepare(`
-    UPDATE tasks SET title = ?, description = ?, status = ?, kind = ?, priority = ?, created_at = ?, completed_at = ?, related_event_id = ?, external_owner = ?
+    UPDATE tasks SET title = ?, description = ?, status = ?, kind = ?, priority = ?, created_at = ?, completed_at = ?, related_event_id = ?, external_owner = ?, color = ?, table_id = ?
     WHERE id = ?
   `).run(
     merged.title,
@@ -108,6 +111,8 @@ export function updateTask(db: Db, id: number, data: TaskUpdate): Task {
     merged.completed_at ?? null,
     merged.related_event_id ?? null,
     merged.external_owner ?? null,
+    merged.color ?? null,
+    merged.table_id ?? null,
     id
   );
   return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task;
@@ -231,4 +236,73 @@ export function updateReminder(db: Db, id: number, data: ReminderUpdate): Remind
 export function deleteReminder(db: Db, id: number): void {
   const result = db.prepare('DELETE FROM reminders WHERE id = ?').run(id);
   assert(result.changes > 0, `Reminder not found: ${id}`);
+}
+
+// --- Table ---
+
+export type TableInsert = Omit<Table, 'id'> & { id?: string };
+
+export function createTable(db: Db, data: TableInsert): Table {
+  assert(typeof data.title === 'string' && data.title.trim() !== '', 'Table title is required');
+  assert(typeof data.x === 'number', 'Table x must be a number');
+  assert(typeof data.y === 'number', 'Table y must be a number');
+  assert(typeof data.width === 'number' && data.width > 0, 'Table width must be a positive number');
+  assert(typeof data.height === 'number' && data.height > 0, 'Table height must be a positive number');
+
+  const id = data.id || `table-${Date.now()}`;
+  const stmt = db.prepare(`
+    INSERT INTO tables (id, title, color, x, y, width, height, is_permanent)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    id,
+    data.title.trim(),
+    data.color ?? null,
+    data.x,
+    data.y,
+    data.width,
+    data.height,
+    data.is_permanent ? 1 : 0
+  );
+  return db.prepare('SELECT * FROM tables WHERE id = ?').get(id) as Table;
+}
+
+export type TableUpdate = Partial<Omit<Table, 'id'>>;
+
+export function updateTable(db: Db, id: string, data: TableUpdate): Table {
+  const existing = db.prepare('SELECT * FROM tables WHERE id = ?').get(id) as Table | undefined;
+  assert(existing !== undefined, `Table not found: ${id}`);
+
+  if (data.title !== undefined) {
+    assert(typeof data.title === 'string' && data.title.trim() !== '', 'Table title cannot be empty');
+  }
+  if (data.x !== undefined) assert(typeof data.x === 'number', 'Table x must be a number');
+  if (data.y !== undefined) assert(typeof data.y === 'number', 'Table y must be a number');
+  if (data.width !== undefined) assert(typeof data.width === 'number' && data.width > 0, 'Table width must be a positive number');
+  if (data.height !== undefined) assert(typeof data.height === 'number' && data.height > 0, 'Table height must be a positive number');
+
+  const merged: Table = {
+    ...existing,
+    ...data,
+    id: existing.id,
+  };
+  db.prepare(`
+    UPDATE tables SET title = ?, color = ?, x = ?, y = ?, width = ?, height = ?, is_permanent = ?
+    WHERE id = ?
+  `).run(
+    merged.title,
+    merged.color ?? null,
+    merged.x,
+    merged.y,
+    merged.width,
+    merged.height,
+    merged.is_permanent,
+    id
+  );
+  return db.prepare('SELECT * FROM tables WHERE id = ?').get(id) as Table;
+}
+
+export function deleteTable(db: Db, id: string): void {
+  const result = db.prepare('DELETE FROM tables WHERE id = ?').run(id);
+  assert(result.changes > 0, `Table not found: ${id}`);
 }

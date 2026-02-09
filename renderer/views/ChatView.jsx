@@ -3,10 +3,19 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { Send } from 'lucide-react';
+import { routeChatMessage } from '@/utils/chatRouter';
 
 export function ChatView() {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [chatContext, setChatContext] = useState({
+    today: [],
+    backlog: [],
+    scheduled: [],
+    waiting: [],
+    tables: [],
+  });
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -18,21 +27,176 @@ export function ChatView() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  const handleSend = useCallback(() => {
-    const trimmed = inputValue.trim();
-    if (!trimmed) return;
+  // Fetch context data for chat routing
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.tentak === 'undefined') return;
 
-    const newMessage = {
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    Promise.all([
+      window.tentak.query({ type: 'tasksByScheduledDate', params: { date: todayStr } }),
+      window.tentak.query({ type: 'tasksBacklog' }),
+      window.tentak.query({ type: 'tasksScheduled' }),
+      window.tentak.query({ type: 'tasksWaiting' }),
+      window.tentak.query({ type: 'allTables' }),
+    ])
+      .then(([todayRes, backlogRes, scheduledRes, waitingRes, tablesRes]) => {
+        setChatContext({
+          today: todayRes.ok ? todayRes.data : [],
+          backlog: backlogRes.ok ? backlogRes.data : [],
+          scheduled: scheduledRes.ok ? scheduledRes.data : [],
+          waiting: waitingRes.ok ? waitingRes.data : [],
+          tables: tablesRes.ok ? tablesRes.data : [],
+        });
+      })
+      .catch(() => {
+        // Silently fail - context will be empty, router will route to agent
+      });
+  }, []);
+
+  const sendToAgent = useCallback(
+    async (content) => {
+      setIsSending(true);
+      try {
+        const baseTimestamp = Date.now();
+
+        // If the agent API is not available, show a graceful message and return.
+        if (typeof window === 'undefined' || !window.tentak || typeof window.tentak.agentAsk !== 'function') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `agent-${baseTimestamp}-unavailable`,
+              role: 'assistant',
+              content:
+                'Clawdbot is not available in this build. The rest of Tentak continues to work normally.',
+              timestamp: baseTimestamp,
+            },
+          ]);
+          return;
+        }
+
+        const result = await window.tentak.agentAsk(content);
+        if (result.ok && result.reply) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `agent-${baseTimestamp}`,
+              role: 'assistant',
+              content: result.reply,
+              timestamp: Date.now(),
+            },
+          ]);
+        } else {
+          const errorText = result && !result.ok && result.error ? result.error : 'Unknown agent error';
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `agent-${baseTimestamp}-error`,
+              role: 'assistant',
+              content: `Clawdbot failed to answer: ${errorText}`,
+              timestamp: Date.now(),
+            },
+          ]);
+        }
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `agent-error-${Date.now()}`,
+            role: 'assistant',
+            content: `Clawdbot encountered an unexpected error: ${String(err)}`,
+            timestamp: Date.now(),
+          },
+        ]);
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [],
+  );
+
+  const handleSend = useCallback(async () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || isSending) return;
+
+    const userMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role: 'user',
       content: trimmed,
       timestamp: Date.now(),
     };
 
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInputValue('');
     inputRef.current?.focus();
-  }, [inputValue]);
+
+    // Refresh context to ensure we have latest data before routing
+    if (typeof window !== 'undefined' && window.tentak) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      try {
+        const [todayRes, backlogRes, scheduledRes, waitingRes, tablesRes] = await Promise.all([
+          window.tentak.query({ type: 'tasksByScheduledDate', params: { date: todayStr } }),
+          window.tentak.query({ type: 'tasksBacklog' }),
+          window.tentak.query({ type: 'tasksScheduled' }),
+          window.tentak.query({ type: 'tasksWaiting' }),
+          window.tentak.query({ type: 'allTables' }),
+        ]);
+        const freshContext = {
+          today: todayRes.ok ? todayRes.data : [],
+          backlog: backlogRes.ok ? backlogRes.data : [],
+          scheduled: scheduledRes.ok ? scheduledRes.data : [],
+          waiting: waitingRes.ok ? waitingRes.data : [],
+          tables: tablesRes.ok ? tablesRes.data : [],
+        };
+        setChatContext(freshContext);
+
+        // CRITICAL: Route message BEFORE any Clawdbot call
+        const route = routeChatMessage(trimmed, freshContext);
+
+        if (route.type === 'local') {
+          // Fast path: answer locally
+          const localResponse = {
+            id: `local-${Date.now()}`,
+            role: 'assistant',
+            content: route.response,
+            timestamp: Date.now(),
+          };
+          setMessages((prev) => [...prev, localResponse]);
+        } else {
+          // Slow path: send to agent
+          void sendToAgent(trimmed);
+        }
+      } catch {
+        // If context fetch fails, use existing context and route
+        const route = routeChatMessage(trimmed, chatContext);
+        if (route.type === 'local') {
+          const localResponse = {
+            id: `local-${Date.now()}`,
+            role: 'assistant',
+            content: route.response,
+            timestamp: Date.now(),
+          };
+          setMessages((prev) => [...prev, localResponse]);
+        } else {
+          void sendToAgent(trimmed);
+        }
+      }
+    } else {
+      // Fallback: route with existing context
+      const route = routeChatMessage(trimmed, chatContext);
+      if (route.type === 'local') {
+        const localResponse = {
+          id: `local-${Date.now()}`,
+          role: 'assistant',
+          content: route.response,
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, localResponse]);
+      } else {
+        void sendToAgent(trimmed);
+      }
+    }
+  }, [inputValue, isSending, sendToAgent, chatContext]);
 
   const handleKeyDown = useCallback(
     (e) => {
@@ -103,7 +267,7 @@ export function ChatView() {
             type="button"
             size="icon"
             onClick={handleSend}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || isSending}
             className="h-[44px] w-[44px] shrink-0"
             aria-label="Send message"
           >

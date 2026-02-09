@@ -1,5 +1,5 @@
 /**
- * Backend core: DB, queries, CRUD. No IPC, UI, Clawdbot, or LLM.
+ * Backend core: DB, queries, CRUD. No IPC, UI, or agent runtime.
  */
 
 export { openDb, type Db } from './db.js';
@@ -12,6 +12,7 @@ export {
   getAllTasks,
   getTasksByScheduledDate,
 } from './queries.js';
+export { buildAgentContext, type AgentContext } from './agentContext.js';
 export {
   createTask,
   updateTask,

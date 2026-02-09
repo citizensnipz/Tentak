@@ -23,7 +23,9 @@ import {
   createTable,
   updateTable,
   deleteTable,
+  buildAgentContext,
 } from '../backend/dist/backend/index.js';
+import { runClawdbot } from '../agent/runClawdbot.js';
 
 const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting', 'allTables', 'allTasks', 'tasksByScheduledDate'];
 const MUTATE_OPERATIONS = [
@@ -156,4 +158,27 @@ export function registerIpcHandlers(db) {
       }
     })
   );
+
+  // Agent / Clawdbot: read-only query assistant.
+  ipcMain.handle('tentak:agent:ask', async (_event, payload) => {
+    try {
+      const message = payload?.message;
+      if (typeof message !== 'string' || !message.trim()) {
+        throw new Error('agent:ask requires a non-empty message string');
+      }
+
+      // Build a sanitized, JSON-only snapshot of the current state for the agent.
+      const context = buildAgentContext(db);
+
+      // Run the agent in a strictly read-only fashion.
+      const reply = await runClawdbot(message, context);
+
+      return { ok: true, reply };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
 }

@@ -1,5 +1,6 @@
 /**
- * Preload: expose minimal window.tentak API via contextBridge. No agent APIs.
+ * Preload: expose minimal window.tentak API via contextBridge.
+ * SECURITY: Only well-defined IPC channels are exposed; no direct access to ipcRenderer.
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
@@ -10,5 +11,12 @@ contextBridge.exposeInMainWorld('tentak', {
   },
   mutate(payload) {
     return ipcRenderer.invoke('tentak:mutate', payload);
+  },
+  /**
+   * Read-only agent / Clawdbot entrypoint from the renderer.
+   * Takes a message string and returns { ok: boolean, reply?: string, error?: string }.
+   */
+  agentAsk(message) {
+    return ipcRenderer.invoke('tentak:agent:ask', { message });
   },
 });

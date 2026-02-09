@@ -41,9 +41,14 @@ export type MutateResult<T = unknown> =
   | { ok: true; data: T | null }
   | { ok: false; error: string };
 
+export type AgentAskResult =
+  | { ok: true; reply: string }
+  | { ok: false; error: string };
+
 export interface TentakAPI {
   query(payload: QueryPayload): Promise<QueryResult>;
   mutate(payload: MutatePayload): Promise<MutateResult>;
+  agentAsk(message: string): Promise<AgentAskResult>;
 }
 
 declare global {

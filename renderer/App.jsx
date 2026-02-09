@@ -13,7 +13,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { X, Pencil, LayoutGrid, ClipboardList, Plus } from 'lucide-react';
+import { X, Pencil, LayoutGrid, ClipboardList, Plus, Calendar, LayoutDashboard, Lock, Unlock } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const DEFAULT_TASK_COLOR = '#e0e0e0';
 
@@ -80,6 +90,7 @@ function TaskCard({
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editColor, setEditColor] = useState('');
+  const [editScheduledDate, setEditScheduledDate] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const titleInputRef = useRef(null);
   const cardRef = useRef(null);
@@ -92,10 +103,11 @@ function TaskCard({
       setEditTitle(task.title);
       setEditDescription(task.description || '');
       setEditColor(task.color || DEFAULT_TASK_COLOR);
+      setEditScheduledDate(task.scheduled_date || '');
       setShowColorPicker(false);
       titleInputRef.current?.focus();
     }
-  }, [isEditing, task.title, task.description, task.color]);
+  }, [isEditing, task.title, task.description, task.color, task.scheduled_date]);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -116,15 +128,17 @@ function TaskCard({
     if (!t) return;
     const desc = editDescription.trim() || null;
     const color = editColor || null;
+    const sched = editScheduledDate.trim() || null;
     const changed =
       t !== task.title ||
       desc !== (task.description || null) ||
-      (color || DEFAULT_TASK_COLOR) !== (task.color || DEFAULT_TASK_COLOR);
+      (color || DEFAULT_TASK_COLOR) !== (task.color || DEFAULT_TASK_COLOR) ||
+      sched !== (task.scheduled_date || null);
     if (!changed) {
       setIsEditing(false);
       return;
     }
-    onUpdate(task.id, { title: t, description: desc, color: color || null });
+    onUpdate(task.id, { title: t, description: desc, color: color || null, scheduled_date: sched });
     setIsEditing(false);
   }
 
@@ -244,6 +258,19 @@ function TaskCard({
               rows={2}
               className="min-h-[60px] text-sm text-muted-foreground resize-y"
             />
+            <div className="mt-2">
+              <Label htmlFor="edit-scheduled-date" className="text-xs text-muted-foreground">Scheduled date (optional)</Label>
+              <Input
+                id="edit-scheduled-date"
+                type="date"
+                value={editScheduledDate}
+                onChange={(e) => setEditScheduledDate(e.target.value)}
+                onBlur={handleBlur}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="mt-1 h-8 text-sm"
+              />
+            </div>
           </>
         ) : (
           <>
@@ -301,9 +328,65 @@ const DEFAULT_TABLE_COLOR = '#c4c4c4';
 const TABLE_ID_TO_KIND = { backlog: 'backlog', today: 'scheduled' };
 const KIND_TO_TABLE_ID = { backlog: 'backlog', scheduled: 'today', waiting: 'backlog', external_dependency: 'backlog', someday: 'backlog' };
 
-function Table({ table, onHeaderPointerDown, onHeaderPointerMove, onHeaderPointerUp, onHeaderPointerCancel }) {
+const DATE_REMIND_KEY = 'tentak.dontRemindDateChange';
+
+function formatTableDate(dateStr) {
+  if (!dateStr || dateStr.length < 10) return '';
+  const d = new Date(dateStr.slice(0, 10) + 'T12:00:00');
+  const months = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
+  const month = months[d.getMonth()];
+  const day = d.getDate();
+  const year = d.getFullYear();
+  return `${month} ${day}, ${year}`;
+}
+
+function daysFromToday(dateStr) {
+  if (!dateStr || dateStr.length < 10) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr.slice(0, 10) + 'T12:00:00');
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d - today) / (24 * 60 * 60 * 1000));
+}
+
+function getTableDisplayTitle(table, todayStr) {
+  // Today table: always show "Today" only
+  if (table.id === 'today') return 'Today';
+  
+  const effectiveDate = table.table_date || null;
+  if (!effectiveDate) return table.title;
+  
+  const n = daysFromToday(effectiveDate);
+  
+  // Tomorrow: always show "Tomorrow" regardless of custom title
+  if (n === 1) return 'Tomorrow';
+  
+  const dayLabel = Math.abs(n) === 1 ? 'day' : 'days';
+  const formattedDate = formatTableDate(effectiveDate);
+  
+  // If custom title exists, use it; otherwise use formatted date
+  const displayTitle = table.title.trim() || formattedDate;
+  return `${displayTitle} (in ${n} ${dayLabel})`;
+}
+
+const PERMANENT_TABLE_IDS = ['backlog', 'today'];
+
+function Table({
+  table,
+  todayStr,
+  onHeaderPointerDown,
+  onHeaderPointerMove,
+  onHeaderPointerUp,
+  onHeaderPointerCancel,
+  onLockToggle,
+  onDeleteClick,
+}) {
   const headerBg = table.color || DEFAULT_TABLE_COLOR;
   const headerTextColor = getTextColorForBackground(headerBg);
+  const displayTitle = getTableDisplayTitle(table, todayStr);
+  const isPermanent = PERMANENT_TABLE_IDS.includes(table.id);
+  const locked = Boolean(table.locked);
+  const canDrag = !locked;
   return (
     <div
       data-table-id={table.id}
@@ -317,24 +400,64 @@ function Table({ table, onHeaderPointerDown, onHeaderPointerMove, onHeaderPointe
       }}
     >
       <div
-        className="table-header flex items-center h-9 px-3 cursor-grab select-none touch-none"
+        className={cn(
+          'table-header flex items-center h-9 px-3 select-none touch-none',
+          canDrag ? 'cursor-grab' : 'cursor-default'
+        )}
         style={{ backgroundColor: headerBg, color: headerTextColor }}
-        onPointerDown={onHeaderPointerDown}
-        onPointerMove={onHeaderPointerMove}
-        onPointerUp={onHeaderPointerUp}
-        onPointerCancel={onHeaderPointerCancel}
+        onPointerDown={canDrag ? onHeaderPointerDown : undefined}
+        onPointerMove={canDrag ? onHeaderPointerMove : undefined}
+        onPointerUp={canDrag ? onHeaderPointerUp : undefined}
+        onPointerCancel={canDrag ? onHeaderPointerCancel : undefined}
       >
-        <span className="text-sm font-semibold">{table.title}</span>
+        <span className="text-sm font-semibold flex-1 min-w-0 truncate">{displayTitle}</span>
+        <div className="flex items-center gap-0.5 shrink-0 ml-2">
+          {onLockToggle && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-inherit opacity-80 hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onLockToggle(table.id);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-label={locked ? 'Unlock table' : 'Lock table'}
+            >
+              {locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+            </Button>
+          )}
+          {!isPermanent && onDeleteClick && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-inherit opacity-80 hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onDeleteClick(table.id);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-label="Delete table"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
       <div className="flex-1" style={{ height: table.height - 36 }} />
     </div>
   );
 }
 
-function CreateTaskModal({ onClose, onSubmit }) {
+function CreateTaskModal({ onClose, onSubmit, initialScheduledDate = null }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [color, setColor] = useState(DEFAULT_TASK_COLOR);
+  const [scheduledDate, setScheduledDate] = useState(initialScheduledDate || '');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const titleRef = useRef(null);
@@ -342,6 +465,10 @@ function CreateTaskModal({ onClose, onSubmit }) {
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (initialScheduledDate) setScheduledDate(initialScheduledDate);
+  }, [initialScheduledDate]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -352,7 +479,8 @@ function CreateTaskModal({ onClose, onSubmit }) {
     }
     setError(null);
     setSubmitting(true);
-    onSubmit({ title: t, description: description.trim() || null, color: color || null })
+    const sched = scheduledDate.trim() || null;
+    onSubmit({ title: t, description: description.trim() || null, color: color || null, scheduled_date: sched })
       .then(() => onClose())
       .catch((err) => {
         setError(String(err));
@@ -392,6 +520,15 @@ function CreateTaskModal({ onClose, onSubmit }) {
               className="resize-y"
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="task-scheduled-date">Scheduled date (optional)</Label>
+            <Input
+              id="task-scheduled-date"
+              type="date"
+              value={scheduledDate}
+              onChange={(e) => setScheduledDate(e.target.value)}
+            />
+          </div>
           {error && (
             <div className="text-destructive text-sm mb-2">{error}</div>
           )}
@@ -411,6 +548,7 @@ function CreateTaskModal({ onClose, onSubmit }) {
 
 function CreateTableModal({ onClose, onSubmit }) {
   const [name, setName] = useState('');
+  const [tableDate, setTableDate] = useState('');
   const [color, setColor] = useState(DEFAULT_TABLE_COLOR);
   const [error, setError] = useState(null);
   const nameRef = useRef(null);
@@ -422,12 +560,16 @@ function CreateTableModal({ onClose, onSubmit }) {
   function handleSubmit(e) {
     e.preventDefault();
     const t = name.trim();
-    if (!t) {
-      setError('Table name is required');
+    const date = tableDate.trim() || null;
+    
+    // Validation: if no date, title is required
+    if (!date && !t) {
+      setError('Table name is required when no date is provided');
       return;
     }
+    
     setError(null);
-    onSubmit({ name: t, color: color || DEFAULT_TABLE_COLOR });
+    onSubmit({ name: t, color: color || DEFAULT_TABLE_COLOR, table_date: date });
     onClose();
   }
 
@@ -439,13 +581,24 @@ function CreateTableModal({ onClose, onSubmit }) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="table-name">Table name (required)</Label>
+            <Label htmlFor="table-name">
+              Table name {!tableDate.trim() && '(required)'}
+            </Label>
             <Input
               id="table-name"
               ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Table name"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="table-date">Date (optional)</Label>
+            <Input
+              id="table-date"
+              type="date"
+              value={tableDate}
+              onChange={(e) => setTableDate(e.target.value)}
             />
           </div>
           <div className="space-y-2">
@@ -540,6 +693,64 @@ function AddMenu({ onNewTask, onNewTable }) {
   );
 }
 
+function DayList({ date, onDateChange, tasks, loading, error, onDelete, onNewTask }) {
+  return (
+    <div className="flex flex-col h-full min-h-0 p-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <Label htmlFor="day-list-date" className="text-sm font-medium">Date</Label>
+        <Input
+          id="day-list-date"
+          type="date"
+          value={date}
+          onChange={(e) => onDateChange(e.target.value)}
+          className="w-[10rem]"
+        />
+        <Button type="button" onClick={onNewTask} size="sm">
+          <Plus className="h-4 w-4 mr-1" />
+          New task
+        </Button>
+      </div>
+      {loading && (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      )}
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
+      {!loading && !error && (
+        <ul className="space-y-2 overflow-auto flex-1 min-h-0">
+          {tasks.length === 0 ? (
+            <li className="text-sm text-muted-foreground py-4">No tasks scheduled for this day.</li>
+          ) : (
+            tasks.map((task) => (
+              <li
+                key={task.id}
+                className="flex items-start gap-2 p-3 rounded-lg border border-border bg-card text-card-foreground"
+              >
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-sm">{task.title}</span>
+                  {task.description && (
+                    <p className="text-muted-foreground text-sm mt-0.5 line-clamp-2">{task.description}</p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => onDelete(task.id)}
+                  aria-label="Delete task"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function pointInTable(px, py, table) {
   return px >= table.x && px <= table.x + table.width && py >= table.y && py <= table.y + table.height;
 }
@@ -548,17 +759,19 @@ function getTaskTableId(task) {
   return task.table_id || (KIND_TO_TABLE_ID[task.kind] || 'backlog');
 }
 
-function WorldStage({ tasks, positions, setPositions, tables, setTables, loading, error, onDelete, onUpdate, onTaskTableChange, onTableUpdate }) {
+function WorldStage({ tasks, positions, setPositions, tables, setTables, loading, error, onDelete, onUpdate, onTaskTableChange, onTableUpdate, onRequestDeleteTable, onLockToggle, todayStr }) {
   const dragInfoRef = useRef(null);
   const tableDragInfoRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
   const [draggingTableId, setDraggingTableId] = useState(null);
+  const [dateChangePending, setDateChangePending] = useState(null);
+  const [dontRemindChecked, setDontRemindChecked] = useState(false);
 
   const handleTableHeaderPointerDown = useCallback(
     (tableId) => (event) => {
       if (event.button !== 0) return;
       const table = tables.find((t) => t.id === tableId);
-      if (!table) return;
+      if (!table || table.locked) return;
 
       event.stopPropagation();
       event.preventDefault();
@@ -745,7 +958,17 @@ function WorldStage({ tasks, positions, setPositions, tables, setTables, loading
               ? (task.table_id || (KIND_TO_TABLE_ID[task.kind] || 'backlog'))
               : 'backlog';
             if (currentTableId !== table.id) {
-              onTaskTableChange(taskId, table.id);
+              const effectiveDate = table.id === 'today' ? todayStr : (table.table_date || null);
+              const newScheduledDate = effectiveDate || null;
+              const currentScheduled = (task?.scheduled_date || '').trim() || null;
+              const wouldChangeDate = currentScheduled !== newScheduledDate;
+              const taskHadDate = !!currentScheduled;
+              const dontRemind = typeof localStorage !== 'undefined' && localStorage.getItem(DATE_REMIND_KEY) === 'true';
+              if (wouldChangeDate && taskHadDate && !dontRemind) {
+                setDateChangePending({ taskId, tableId: table.id, newScheduledDate });
+              } else {
+                onTaskTableChange(taskId, table.id, newScheduledDate);
+              }
             }
             break;
           }
@@ -761,8 +984,24 @@ function WorldStage({ tasks, positions, setPositions, tables, setTables, loading
       dragInfoRef.current = null;
       setDraggingId(null);
     },
-    [tables, tasks, onTaskTableChange],
+    [tables, tasks, onTaskTableChange, todayStr],
   );
+
+  const handleDateChangeConfirm = useCallback(() => {
+    if (dontRemindChecked && typeof localStorage !== 'undefined') {
+      localStorage.setItem(DATE_REMIND_KEY, 'true');
+    }
+    if (dateChangePending && onTaskTableChange) {
+      onTaskTableChange(dateChangePending.taskId, dateChangePending.tableId, dateChangePending.newScheduledDate);
+    }
+    setDateChangePending(null);
+    setDontRemindChecked(false);
+  }, [dateChangePending, onTaskTableChange, dontRemindChecked]);
+
+  const handleDateChangeCancel = useCallback(() => {
+    setDateChangePending(null);
+    setDontRemindChecked(false);
+  }, []);
 
   const handlePointerUp = useCallback(
     (taskId) => (event) => finishDrag(taskId, event),
@@ -776,6 +1015,32 @@ function WorldStage({ tasks, positions, setPositions, tables, setTables, loading
 
   return (
     <div className="relative w-full h-full">
+      <AlertDialog open={!!dateChangePending} onOpenChange={(open) => { if (!open) { setDateChangePending(null); setDontRemindChecked(false); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove date from task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Moving this will remove the date assigned to this task. Are you sure?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center space-x-2 py-2">
+            <input
+              type="checkbox"
+              id="dont-remind-date"
+              className="h-4 w-4 rounded border-border"
+              checked={dontRemindChecked}
+              onChange={(e) => setDontRemindChecked(e.target.checked)}
+            />
+            <Label htmlFor="dont-remind-date" className="text-sm font-normal cursor-pointer">Don&apos;t remind me</Label>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDateChangeCancel}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDateChangeConfirm}>
+              Move
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {loading && (
         <div className="absolute top-4 left-4 py-2 px-3 rounded-lg bg-background/95 border border-border font-sans text-sm text-muted-foreground pointer-events-none">
           Loading tasks…
@@ -795,10 +1060,13 @@ function WorldStage({ tasks, positions, setPositions, tables, setTables, loading
         <Table
           key={table.id}
           table={table}
+          todayStr={todayStr}
           onHeaderPointerDown={handleTableHeaderPointerDown(table.id)}
           onHeaderPointerMove={handleTableHeaderPointerMove(table.id)}
           onHeaderPointerUp={handleTableHeaderPointerUp(table.id)}
           onHeaderPointerCancel={handleTableHeaderPointerCancel(table.id)}
+          onLockToggle={onLockToggle}
+          onDeleteClick={onRequestDeleteTable}
         />
       ))}
       {tasks.map((task) => {
@@ -842,6 +1110,15 @@ function App() {
   const [positions, setPositions] = useState({});
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [tableModalOpen, setTableModalOpen] = useState(false);
+  const [view, setView] = useState('board');
+  const [dayDate, setDayDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dayTasks, setDayTasks] = useState([]);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [dayError, setDayError] = useState(null);
+  const [initialScheduledDateForModal, setInitialScheduledDateForModal] = useState(null);
+  const [deleteTablePending, setDeleteTablePending] = useState(null);
+  const cameraRef = useRef(null);
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   // Data loading – tasks
   const fetchTasks = useCallback(() => {
@@ -893,6 +1170,8 @@ function App() {
             width: t.width,
             height: t.height,
             is_permanent: t.is_permanent,
+            table_date: t.table_date ?? null,
+            locked: t.locked ?? false,
           }));
           setTables((prev) => {
             if (!prev || prev.length === 0) {
@@ -915,6 +1194,44 @@ function App() {
   useEffect(() => {
     fetchTables();
   }, [fetchTables]);
+
+  const fetchDayTasks = useCallback(() => {
+    if (typeof window === 'undefined' || typeof window.tentak === 'undefined') return;
+    setDayLoading(true);
+    setDayError(null);
+    window.tentak
+      .query({ type: 'tasksByScheduledDate', params: { date: dayDate } })
+      .then((response) => {
+        if (response.ok) setDayTasks(response.data);
+        else setDayError(response.error || 'Failed to load tasks');
+      })
+      .catch((err) => setDayError(String(err)))
+      .finally(() => setDayLoading(false));
+  }, [dayDate]);
+
+  useEffect(() => {
+    if (view === 'day') fetchDayTasks();
+  }, [view, fetchDayTasks]);
+
+  const centerOnToday = useCallback(() => {
+    if (!tables.length || !cameraRef.current) return;
+    const todayTable = tables.find((t) => t.id === 'today');
+    if (todayTable) {
+      const cx = todayTable.x + todayTable.width / 2;
+      const cy = todayTable.y + todayTable.height / 2;
+      requestAnimationFrame(() => {
+        cameraRef.current?.centerOnWorldPoint?.(cx, cy);
+      });
+    }
+  }, [tables]);
+
+  const prevViewRef = useRef(view);
+  useEffect(() => {
+    if (prevViewRef.current !== 'board' && view === 'board') {
+      centerOnToday();
+    }
+    prevViewRef.current = view;
+  }, [view, centerOnToday]);
 
   // Derived layout – card positions from tasks + tables
   useEffect(() => {
@@ -939,19 +1256,20 @@ function App() {
     });
   }, [tasks, tables]);
 
-  const handleCreateTable = useCallback(({ name, color }) => {
+  const handleCreateTable = useCallback(({ name, color, table_date }) => {
     if (typeof window.tentak === 'undefined') return;
     window.tentak
       .mutate({
         operation: 'tableCreate',
         payload: {
-          title: name.trim(),
+          title: name.trim() || '',
           color: color || DEFAULT_TABLE_COLOR,
           width: DEFAULT_TABLE_WIDTH,
           height: DEFAULT_TABLE_HEIGHT,
           x: NEW_TABLE_CENTER_X,
           y: NEW_TABLE_CENTER_Y,
           is_permanent: 0,
+          table_date: table_date || null,
         },
       })
       .then((r) => {
@@ -964,13 +1282,14 @@ function App() {
             y: r.data.y,
             width: r.data.width,
             height: r.data.height,
+            table_date: r.data.table_date ?? null,
           };
           setTables((prev) => [...prev, newTable]);
         }
       });
   }, []);
 
-  const handleCreateTask = useCallback(({ title, description, color }) => {
+  const handleCreateTask = useCallback(({ title, description, color, scheduled_date }) => {
     if (typeof window.tentak === 'undefined') {
       return Promise.reject(new Error('window.tentak not available'));
     }
@@ -981,6 +1300,7 @@ function App() {
           title,
           description,
           color: color || null,
+          scheduled_date: scheduled_date || null,
           status: 'pending',
           kind: 'backlog',
           priority: 'normal',
@@ -990,8 +1310,11 @@ function App() {
         if (!r.ok) throw new Error(r.error || 'Failed to create task');
         const newTask = r.data;
         setTasks((prev) => [...prev, newTask]);
+        if (view === 'day' && (newTask.scheduled_date || '') === dayDate) {
+          setDayTasks((prev) => [...prev, newTask]);
+        }
       });
-  }, []);
+  }, [view, dayDate]);
 
   const handleDeleteTask = useCallback((id) => {
     if (typeof window.tentak === 'undefined') return;
@@ -1000,6 +1323,7 @@ function App() {
       .then((r) => {
         if (r.ok) {
           setTasks((prev) => prev.filter((t) => t.id !== id));
+          setDayTasks((prev) => prev.filter((t) => t.id !== id));
           setPositions((prev) => {
             const next = { ...prev };
             delete next[id];
@@ -1021,18 +1345,28 @@ function App() {
           setTasks((prev) =>
             prev.map((t) => (t.id === id ? r.data : t))
           );
+          if (view === 'day') {
+            setDayTasks((prev) => {
+              const next = prev.filter((t) => t.id !== id);
+              if ((r.data.scheduled_date || '') === dayDate) next.push(r.data);
+              return next;
+            });
+          }
         }
       });
-  }, []);
+  }, [view, dayDate]);
 
   const handleTaskTableChange = useCallback(
-    (id, tableId) => {
+    (id, tableId, newScheduledDate = null) => {
       const kind = TABLE_ID_TO_KIND[tableId];
+      const updates = { scheduled_date: newScheduledDate };
       if (kind) {
-        handleUpdateTask(id, { kind, table_id: null });
+        updates.kind = kind;
+        updates.table_id = null;
       } else {
-        handleUpdateTask(id, { table_id: tableId });
+        updates.table_id = tableId;
       }
+      handleUpdateTask(id, updates);
     },
     [handleUpdateTask],
   );
@@ -1050,31 +1384,134 @@ function App() {
       });
   }, []);
 
+  const handleLockToggle = useCallback(
+    (tableId) => {
+      const table = tables.find((t) => t.id === tableId);
+      if (!table) return;
+      handleTableUpdate(tableId, { locked: !table.locked });
+    },
+    [tables, handleTableUpdate]
+  );
+
+  const handleTableDelete = useCallback(
+    (tableId, mode) => {
+      if (typeof window.tentak === 'undefined') return;
+      setDeleteTablePending(null);
+      const payload = { id: tableId };
+      if (mode === 'tableOnly') payload.moveTasksToBacklog = true;
+      if (mode === 'tableAndTasks') payload.deleteTasks = true;
+      const taskIdsToRemove = tasks.filter((t) => t.table_id === tableId).map((t) => t.id);
+      window.tentak
+        .mutate({ operation: 'tableDelete', payload })
+        .then((r) => {
+          if (r.ok) {
+            setTables((prev) => prev.filter((t) => t.id !== tableId));
+            if (mode === 'tableOnly') {
+              setTasks((prev) =>
+                prev.map((t) =>
+                  t.table_id === tableId ? { ...t, table_id: null, kind: 'backlog' } : t
+                )
+              );
+            } else if (mode === 'tableAndTasks') {
+              setTasks((prev) => prev.filter((t) => t.table_id !== tableId));
+              setPositions((prev) => {
+                const next = { ...prev };
+                taskIdsToRemove.forEach((id) => delete next[id]);
+                return next;
+              });
+            }
+          }
+        });
+    },
+    [tasks]
+  );
+
+  const handleRequestDeleteTable = useCallback(
+    (tableId) => {
+      const taskCount = tasks.filter((t) => t.table_id === tableId).length;
+      if (taskCount === 0) {
+        handleTableDelete(tableId, 'immediate');
+      } else {
+        setDeleteTablePending({ tableId, taskCount });
+      }
+    },
+    [tasks, handleTableDelete]
+  );
+
   return (
-    <>
-      <WorldCamera>
-        <WorldStage
-          tasks={tasks}
-          positions={positions}
-          setPositions={setPositions}
-          tables={tables}
-          setTables={setTables}
-          loading={loading}
-          error={error}
+    <div className="flex flex-col h-screen">
+      <div className="flex items-center gap-1 p-2 border-b border-border bg-background shrink-0">
+        <Button
+          type="button"
+          variant={view === 'board' ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={() => setView('board')}
+          aria-pressed={view === 'board'}
+        >
+          <LayoutDashboard className="h-4 w-4 mr-1.5" />
+          Board
+        </Button>
+        <Button
+          type="button"
+          variant={view === 'day' ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={() => setView('day')}
+          aria-pressed={view === 'day'}
+        >
+          <Calendar className="h-4 w-4 mr-1.5" />
+          Day
+        </Button>
+      </div>
+      <div className="flex-1 min-h-0 flex flex-col">
+      {view === 'board' && (
+        <>
+          <WorldCamera ref={cameraRef}>
+            <WorldStage
+              tasks={tasks}
+              positions={positions}
+              setPositions={setPositions}
+              tables={tables}
+              setTables={setTables}
+              loading={loading}
+              error={error}
+              onDelete={handleDeleteTask}
+              onUpdate={handleUpdateTask}
+              onTaskTableChange={handleTaskTableChange}
+              onTableUpdate={handleTableUpdate}
+              onRequestDeleteTable={handleRequestDeleteTable}
+              onLockToggle={handleLockToggle}
+              todayStr={todayStr}
+            />
+          </WorldCamera>
+          <AddMenu
+            onNewTask={() => {
+              setInitialScheduledDateForModal(null);
+              setTaskModalOpen(true);
+            }}
+            onNewTable={() => setTableModalOpen(true)}
+          />
+        </>
+      )}
+      {view === 'day' && (
+        <DayList
+          date={dayDate}
+          onDateChange={setDayDate}
+          tasks={dayTasks}
+          loading={dayLoading}
+          error={dayError}
           onDelete={handleDeleteTask}
-          onUpdate={handleUpdateTask}
-          onTaskTableChange={handleTaskTableChange}
-          onTableUpdate={handleTableUpdate}
+          onNewTask={() => {
+            setInitialScheduledDateForModal(dayDate);
+            setTaskModalOpen(true);
+          }}
         />
-      </WorldCamera>
-      <AddMenu
-        onNewTask={() => setTaskModalOpen(true)}
-        onNewTable={() => setTableModalOpen(true)}
-      />
+      )}
+      </div>
       {taskModalOpen && (
         <CreateTaskModal
           onClose={() => setTaskModalOpen(false)}
           onSubmit={handleCreateTask}
+          initialScheduledDate={initialScheduledDateForModal}
         />
       )}
       {tableModalOpen && (
@@ -1083,7 +1520,38 @@ function App() {
           onSubmit={handleCreateTable}
         />
       )}
-    </>
+      <AlertDialog open={!!deleteTablePending} onOpenChange={(open) => { if (!open) setDeleteTablePending(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete table</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tasks are associated with this table. What would you like to do?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={() => setDeleteTablePending(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (deleteTablePending) handleTableDelete(deleteTablePending.tableId, 'tableOnly');
+              }}
+            >
+              Delete table only
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteTablePending) handleTableDelete(deleteTablePending.tableId, 'tableAndTasks');
+              }}
+            >
+              Delete table and tasks
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 

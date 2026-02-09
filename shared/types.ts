@@ -20,6 +20,8 @@ export interface Task {
   external_owner: string | null;
   color: string | null;
   table_id: string | null;
+  /** Optional date (YYYY-MM-DD) for day list / scheduling. */
+  scheduled_date?: string | null;
 }
 
 export type EventKind = 'meeting' | 'personal' | 'reminder' | 'block';
@@ -63,4 +65,8 @@ export interface Table {
   width: number;
   height: number;
   is_permanent: number;
+  /** Optional date (YYYY-MM-DD) for date-associated tables. Today uses current date at runtime. */
+  table_date?: string | null;
+  /** When true, table cannot be dragged on the board. */
+  locked?: boolean;
 }

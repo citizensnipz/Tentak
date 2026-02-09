@@ -10,6 +10,7 @@ export {
   getTasksWaiting,
   getAllTables,
   getAllTasks,
+  getTasksByScheduledDate,
 } from './queries.js';
 export {
   createTask,

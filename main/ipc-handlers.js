@@ -10,6 +10,7 @@ import {
   getTasksWaiting,
   getAllTables,
   getAllTasks,
+  getTasksByScheduledDate,
   createTask,
   updateTask,
   deleteTask,
@@ -24,7 +25,7 @@ import {
   deleteTable,
 } from '../backend/dist/backend/index.js';
 
-const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting', 'allTables', 'allTasks'];
+const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting', 'allTables', 'allTasks', 'tasksByScheduledDate'];
 const MUTATE_OPERATIONS = [
   'taskCreate',
   'taskUpdate',
@@ -77,6 +78,10 @@ export function registerIpcHandlers(db) {
           return getAllTables(db);
         case 'allTasks':
           return getAllTasks(db);
+        case 'tasksByScheduledDate': {
+          const date = params.date ?? new Date().toISOString().slice(0, 10);
+          return getTasksByScheduledDate(db, date);
+        }
         default:
           throw new Error(`Unknown query type: ${type}`);
       }
@@ -141,9 +146,9 @@ export function registerIpcHandlers(db) {
           return updateTable(db, String(id), data);
         }
         case 'tableDelete': {
-          const id = opPayload.id;
+          const { id, moveTasksToBacklog, deleteTasks } = opPayload;
           if (id == null) throw new Error('tableDelete requires id');
-          deleteTable(db, String(id));
+          deleteTable(db, String(id), { moveTasksToBacklog, deleteTasks });
           return null;
         }
         default:

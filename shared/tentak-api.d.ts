@@ -5,7 +5,7 @@
 
 import type { Event, Task } from './types.js';
 
-export type QueryType = 'scheduleToday' | 'tasksBacklog' | 'tasksScheduled' | 'tasksWaiting' | 'allTables' | 'allTasks';
+export type QueryType = 'scheduleToday' | 'tasksBacklog' | 'tasksScheduled' | 'tasksWaiting' | 'allTables' | 'allTasks' | 'tasksByScheduledDate';
 
 export type QueryPayload = {
   type: QueryType;

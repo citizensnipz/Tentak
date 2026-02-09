@@ -24,7 +24,7 @@ export function getScheduleToday(db: Db, date: string): Event[] {
  */
 export function getTasksBacklog(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
     FROM tasks
     WHERE kind = 'backlog'
     ORDER BY created_at
@@ -37,7 +37,7 @@ export function getTasksBacklog(db: Db): Task[] {
  */
 export function getTasksScheduled(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
     FROM tasks
     WHERE kind = 'scheduled'
     ORDER BY created_at
@@ -50,7 +50,7 @@ export function getTasksScheduled(db: Db): Task[] {
  */
 export function getTasksWaiting(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
     FROM tasks
     WHERE status = 'waiting'
     ORDER BY created_at
@@ -63,11 +63,15 @@ export function getTasksWaiting(db: Db): Task[] {
  */
 export function getAllTables(db: Db): Table[] {
   const stmt = db.prepare(`
-    SELECT id, title, color, x, y, width, height, is_permanent
+    SELECT id, title, color, x, y, width, height, is_permanent, table_date, locked
     FROM tables
     ORDER BY is_permanent DESC, id
   `);
-  return stmt.all() as Table[];
+  const rows = stmt.all() as (Table & { locked?: number })[];
+  return rows.map((r) => ({
+    ...r,
+    locked: Boolean(r.locked),
+  }));
 }
 
 /**
@@ -75,9 +79,22 @@ export function getAllTables(db: Db): Table[] {
  */
 export function getAllTasks(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
     FROM tasks
     ORDER BY created_at
   `);
   return stmt.all() as Task[];
+}
+
+/**
+ * Tasks scheduled for a given date (YYYY-MM-DD). Used by Day List view.
+ */
+export function getTasksByScheduledDate(db: Db, date: string): Task[] {
+  const stmt = db.prepare(`
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
+    FROM tasks
+    WHERE scheduled_date = ?
+    ORDER BY created_at
+  `);
+  return stmt.all(date) as Task[];
 }

@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   related_event_id INTEGER,
   external_owner TEXT,
   color TEXT,
-  table_id TEXT
+  table_id TEXT,
+  scheduled_date TEXT
 );
 
 -- Event: something that happens at a specific time.
@@ -57,5 +58,7 @@ CREATE TABLE IF NOT EXISTS tables (
   y REAL NOT NULL,
   width REAL NOT NULL,
   height REAL NOT NULL,
-  is_permanent INTEGER NOT NULL DEFAULT 0
+  is_permanent INTEGER NOT NULL DEFAULT 0,
+  table_date TEXT,
+  locked INTEGER NOT NULL DEFAULT 0
 );

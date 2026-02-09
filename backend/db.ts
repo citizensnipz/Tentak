@@ -42,6 +42,11 @@ export function openDb(dbPath: string): Db {
       /* column already exists */
     }
     try {
+      db.exec('ALTER TABLE tasks ADD COLUMN scheduled_date TEXT');
+    } catch {
+      /* column already exists */
+    }
+    try {
       db.exec(`
         CREATE TABLE IF NOT EXISTS tables (
           id TEXT PRIMARY KEY,
@@ -51,12 +56,24 @@ export function openDb(dbPath: string): Db {
           y REAL NOT NULL,
           width REAL NOT NULL,
           height REAL NOT NULL,
-          is_permanent INTEGER NOT NULL DEFAULT 0
+          is_permanent INTEGER NOT NULL DEFAULT 0,
+          table_date TEXT,
+          locked INTEGER NOT NULL DEFAULT 0
         )
       `);
       initializePermanentTables(db);
     } catch {
       /* table already exists */
+    }
+    try {
+      db.exec('ALTER TABLE tables ADD COLUMN table_date TEXT');
+    } catch {
+      /* column already exists */
+    }
+    try {
+      db.exec('ALTER TABLE tables ADD COLUMN locked INTEGER NOT NULL DEFAULT 0');
+    } catch {
+      /* column already exists */
     }
   }
 

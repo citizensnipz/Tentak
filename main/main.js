@@ -2,20 +2,26 @@
  * Electron main process: open DB, register IPC, create window. No UI logic.
  */
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, nativeImage } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { openDb } from '../backend/dist/backend/index.js';
 import { registerIpcHandlers } from './ipc-handlers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const ASSETS_DIR = join(__dirname, '..', 'assets');
 let mainWindow = null;
 let db = null;
 
 function createWindow() {
+  const iconPath = join(ASSETS_DIR, 'icon.png');
+  const iconAlt = join(ASSETS_DIR, 'icon.png.png');
+  const icon = nativeImage.createFromPath(iconPath);
+  const iconToUse = icon.isEmpty() ? nativeImage.createFromPath(iconAlt) : icon;
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
+    icon: iconToUse.isEmpty() ? undefined : iconToUse,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,

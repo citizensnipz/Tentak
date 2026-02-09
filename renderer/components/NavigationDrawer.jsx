@@ -1,9 +1,22 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Calendar, LayoutDashboard, MessageCircle, Settings as SettingsIcon, Menu } from 'lucide-react';
 
 export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }) {
+  const [logoUrl, setLogoUrl] = useState(null);
+  const [iconUrl, setIconUrl] = useState(null);
+
+  useEffect(() => {
+    if (typeof window.tentak?.getAssetPath !== 'function') return;
+    window.tentak.getAssetPath('logo.png').then((res) => {
+      if (res?.ok && res.data) setLogoUrl(res.data);
+    });
+    window.tentak.getAssetPath('icon.png').then((res) => {
+      if (res?.ok && res.data) setIconUrl(res.data);
+    });
+  }, []);
+
   const navItems = [
     { id: 'board', label: 'Board', icon: LayoutDashboard },
     { id: 'day', label: 'Day', icon: Calendar },
@@ -29,14 +42,22 @@ export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }
           isOpen ? 'w-64' : 'w-16'
         )}
       >
-        {/* Logo placeholder */}
+        {/* Logo / app icon */}
         <div className="h-16 flex items-center justify-center border-b border-border shrink-0">
           {isOpen ? (
-            <div className="text-lg font-semibold">Tentak</div>
+            logoUrl ? (
+              <img src={logoUrl} alt="Tentak" className="h-10 w-auto max-w-[180px] object-contain object-center" />
+            ) : (
+              <div className="text-lg font-semibold">Tentak</div>
+            )
           ) : (
-            <div className="w-8 h-8 rounded bg-primary/20 flex items-center justify-center">
-              <span className="text-xs font-bold">T</span>
-            </div>
+            iconUrl ? (
+              <img src={iconUrl} alt="" className="w-8 h-8 object-contain" aria-hidden />
+            ) : (
+              <div className="w-8 h-8 rounded bg-primary/20 flex items-center justify-center">
+                <span className="text-xs font-bold">T</span>
+              </div>
+            )
           )}
         </div>
 

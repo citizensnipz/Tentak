@@ -3,6 +3,13 @@
  */
 
 import { ipcMain } from 'electron';
+import { existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { pathToFileURL } from 'url';
+
+const __dirnameIpc = dirname(fileURLToPath(import.meta.url));
+const ASSETS_DIR = join(__dirnameIpc, '..', 'assets');
 import {
   getScheduleToday,
   getTasksBacklog,
@@ -190,6 +197,16 @@ export function registerIpcHandlers(db) {
       };
     }
   });
+
+  // Asset path: return file:// URL for use in img src (e.g. logo, icon).
+  ipcMain.handle('tentak:getAssetPath', wrap((payload) => {
+    const name = payload?.name;
+    if (typeof name !== 'string' || !name.length) throw new Error('getAssetPath requires name');
+    const safe = name.replace(/\.\./g, '').replace(/^\/+/, '');
+    let absolute = join(ASSETS_DIR, safe);
+    if (!existsSync(absolute)) absolute = join(ASSETS_DIR, safe + '.png');
+    return pathToFileURL(absolute).href;
+  }));
 
   // Chat: persisted messages, load and append (trimming handled in backend).
   ipcMain.handle('tentak:chat:loadMessages', wrap((payload) => {

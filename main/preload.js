@@ -20,6 +20,13 @@ contextBridge.exposeInMainWorld('tentak', {
     return ipcRenderer.invoke('tentak:agent:ask', { message });
   },
   /**
+   * Returns a file:// URL for an asset (e.g. 'logo.png', 'icon.png') for use in img src.
+   */
+  getAssetPath(name) {
+    return ipcRenderer.invoke('tentak:getAssetPath', { name });
+  },
+
+  /**
    * Chat: load and append messages (persistence and trimming in backend).
    */
   loadChatMessages(chatId = 'default') {

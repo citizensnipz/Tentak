@@ -35,3 +35,8 @@ export {
   type TableInsert,
   type TableUpdate,
 } from './crud.js';
+export {
+  getOpenAIApiKey,
+  setOpenAIApiKey,
+  clearOpenAIApiKey,
+} from './secureSettings.js';

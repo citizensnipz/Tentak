@@ -19,4 +19,16 @@ contextBridge.exposeInMainWorld('tentak', {
   agentAsk(message) {
     return ipcRenderer.invoke('tentak:agent:ask', { message });
   },
+  /**
+   * Settings: OpenAI API key management.
+   * SECURITY: Key is stored securely in main process, never exposed to renderer.
+   */
+  settings: {
+    getOpenAIApiKey() {
+      return ipcRenderer.invoke('tentak:settings:getOpenAIApiKey');
+    },
+    setOpenAIApiKey(key) {
+      return ipcRenderer.invoke('tentak:settings:setOpenAIApiKey', { key });
+    },
+  },
 });

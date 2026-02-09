@@ -24,6 +24,9 @@ import {
   updateTable,
   deleteTable,
   buildAgentContext,
+  getOpenAIApiKey,
+  setOpenAIApiKey,
+  clearOpenAIApiKey,
 } from '../backend/dist/backend/index.js';
 import { runClawdbot } from '../agent/runClawdbot.js';
 
@@ -170,15 +173,45 @@ export function registerIpcHandlers(db) {
       // Build a sanitized, JSON-only snapshot of the current state for the agent.
       const context = buildAgentContext(db);
 
-      // Run the agent in a strictly read-only fashion.
-      const reply = await runClawdbot(message, context);
+      // Check if OpenAI API key is configured
+      const apiKey = getOpenAIApiKey();
 
-      return { ok: true, reply };
+      // Run the agent in a strictly read-only fashion.
+      const result = await runClawdbot(message, context, apiKey);
+
+      return { ok: true, reply: result.reply, usedLLM: result.usedLLM };
     } catch (err) {
       return {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
+        usedLLM: false,
       };
     }
   });
+
+  // Secure settings: OpenAI API key management.
+  ipcMain.handle('tentak:settings:getOpenAIApiKey', wrap(() => {
+    const key = getOpenAIApiKey();
+    // Return masked key for display (show last 4 characters)
+    if (key) {
+      const masked = key.length > 4 
+        ? '*'.repeat(key.length - 4) + key.slice(-4)
+        : '*'.repeat(key.length);
+      return { key: masked, hasKey: true };
+    }
+    return { key: null, hasKey: false };
+  }));
+
+  ipcMain.handle('tentak:settings:setOpenAIApiKey', wrap((payload) => {
+    const { key } = payload;
+    if (typeof key !== 'string') {
+      throw new Error('API key must be a string');
+    }
+    if (key.trim() === '') {
+      clearOpenAIApiKey();
+      return null;
+    }
+    setOpenAIApiKey(key.trim());
+    return null;
+  }));
 }

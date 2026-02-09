@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { Send } from 'lucide-react';
+import { Send, Sparkles } from 'lucide-react';
 import { routeChatMessage } from '@/utils/chatRouter';
 
 export function ChatView() {
@@ -70,6 +70,7 @@ export function ChatView() {
               content:
                 'Clawdbot is not available in this build. The rest of Tentak continues to work normally.',
               timestamp: baseTimestamp,
+              usedLLM: false,
             },
           ]);
           return;
@@ -84,6 +85,7 @@ export function ChatView() {
               role: 'assistant',
               content: result.reply,
               timestamp: Date.now(),
+              usedLLM: result.usedLLM === true, // Only true if LLM was actually used
             },
           ]);
         } else {
@@ -95,6 +97,7 @@ export function ChatView() {
               role: 'assistant',
               content: `Clawdbot failed to answer: ${errorText}`,
               timestamp: Date.now(),
+              usedLLM: false,
             },
           ]);
         }
@@ -106,6 +109,7 @@ export function ChatView() {
             role: 'assistant',
             content: `Clawdbot encountered an unexpected error: ${String(err)}`,
             timestamp: Date.now(),
+            usedLLM: false,
           },
         ]);
       } finally {
@@ -154,16 +158,17 @@ export function ChatView() {
         const route = routeChatMessage(trimmed, freshContext);
 
         if (route.type === 'local') {
-          // Fast path: answer locally
+          // Fast path: answer locally (no LLM used)
           const localResponse = {
             id: `local-${Date.now()}`,
             role: 'assistant',
             content: route.response,
             timestamp: Date.now(),
+            usedLLM: false, // Local responses never use LLM
           };
           setMessages((prev) => [...prev, localResponse]);
         } else {
-          // Slow path: send to agent
+          // Slow path: send to agent (may use LLM if API key is configured)
           void sendToAgent(trimmed);
         }
       } catch {
@@ -175,6 +180,7 @@ export function ChatView() {
             role: 'assistant',
             content: route.response,
             timestamp: Date.now(),
+            usedLLM: false, // Local responses never use LLM
           };
           setMessages((prev) => [...prev, localResponse]);
         } else {
@@ -190,6 +196,7 @@ export function ChatView() {
           role: 'assistant',
           content: route.response,
           timestamp: Date.now(),
+          usedLLM: false, // Local responses never use LLM
         };
         setMessages((prev) => [...prev, localResponse]);
       } else {
@@ -235,16 +242,26 @@ export function ChatView() {
                 <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                 <div
                   className={cn(
-                    'text-xs mt-1',
+                    'text-xs mt-1 flex items-center gap-1.5',
                     msg.role === 'user'
                       ? 'text-primary-foreground/70'
                       : 'text-muted-foreground/70'
                   )}
                 >
-                  {new Date(msg.timestamp).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  <span>
+                    {new Date(msg.timestamp).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  {msg.role === 'assistant' && msg.usedLLM === true && (
+                    <span
+                      className="inline-flex items-center"
+                      title="Generated using AI"
+                    >
+                      <Sparkles className="h-3 w-3 opacity-60" />
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

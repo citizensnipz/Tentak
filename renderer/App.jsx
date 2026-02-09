@@ -85,6 +85,7 @@ function TaskCard({
   onPointerCancel,
   onDelete,
   onUpdate,
+  onToggleCompletion,
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -97,6 +98,7 @@ function TaskCard({
 
   const headerColor = task.color || DEFAULT_TASK_COLOR;
   const headerTextColor = getTextColorForBackground(headerColor);
+  const isCompleted = task.status === 'completed';
 
   useEffect(() => {
     if (isEditing) {
@@ -166,7 +168,8 @@ function TaskCard({
         'task-card p-0 rounded-xl border border-border bg-background font-sans',
         isEditing ? 'overflow-visible select-text touch-auto cursor-default' : 'overflow-hidden select-none touch-none cursor-grab',
         isDragging && 'shadow-lg cursor-grabbing z-[5]',
-        !isDragging && 'shadow z-[1]'
+        !isDragging && 'shadow z-[1]',
+        isCompleted && !isEditing && 'opacity-75'
       )}
       style={cardStyle}
       onPointerDown={isEditing ? undefined : onPointerDown}
@@ -175,12 +178,30 @@ function TaskCard({
       onPointerCancel={isEditing ? undefined : onPointerCancel}
     >
       <div
-        className="flex items-center h-9 px-3 pr-9"
+        className={cn(
+          "flex items-center h-9 px-3 pr-9",
+          isCompleted && !isEditing && "opacity-60"
+        )}
         style={{
           backgroundColor: isEditing ? editColor || DEFAULT_TASK_COLOR : headerColor,
           color: isEditing ? getTextColorForBackground(editColor || DEFAULT_TASK_COLOR) : headerTextColor,
         }}
       >
+        {onToggleCompletion && (
+          <input
+            type="checkbox"
+            checked={isCompleted}
+            onChange={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onToggleCompletion(task.id, !isCompleted);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 mr-2 cursor-pointer shrink-0"
+            aria-label={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
+          />
+        )}
         {isEditing ? (
           <Input
             ref={titleInputRef}
@@ -199,7 +220,10 @@ function TaskCard({
             className="flex-1 h-8 text-sm font-semibold bg-white/20 border-white/20"
           />
         ) : (
-          <span className="text-sm font-semibold leading-tight overflow-hidden text-ellipsis whitespace-nowrap">
+          <span className={cn(
+            "text-sm font-semibold leading-tight overflow-hidden text-ellipsis whitespace-nowrap flex-1",
+            isCompleted && "line-through"
+          )}>
             {task.title}
           </span>
         )}
@@ -275,7 +299,10 @@ function TaskCard({
         ) : (
           <>
             {task.description && (
-              <span className="text-sm text-muted-foreground leading-snug">
+              <span className={cn(
+                "text-sm text-muted-foreground leading-snug",
+                isCompleted && "opacity-60"
+              )}>
                 {task.description}
               </span>
             )}
@@ -693,7 +720,7 @@ function AddMenu({ onNewTask, onNewTable }) {
   );
 }
 
-function DayList({ date, onDateChange, tasks, loading, error, onDelete, onNewTask }) {
+function DayList({ date, onDateChange, tasks, loading, error, onDelete, onNewTask, onToggleCompletion }) {
   return (
     <div className="flex flex-col h-full min-h-0 p-4">
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -721,29 +748,57 @@ function DayList({ date, onDateChange, tasks, loading, error, onDelete, onNewTas
           {tasks.length === 0 ? (
             <li className="text-sm text-muted-foreground py-4">No tasks scheduled for this day.</li>
           ) : (
-            tasks.map((task) => (
-              <li
-                key={task.id}
-                className="flex items-start gap-2 p-3 rounded-lg border border-border bg-card text-card-foreground"
-              >
-                <div className="flex-1 min-w-0">
-                  <span className="font-medium text-sm">{task.title}</span>
-                  {task.description && (
-                    <p className="text-muted-foreground text-sm mt-0.5 line-clamp-2">{task.description}</p>
+            tasks.map((task) => {
+              const isCompleted = task.status === 'completed';
+              return (
+                <li
+                  key={task.id}
+                  className={cn(
+                    "flex items-start gap-2 p-3 rounded-lg border border-border bg-card text-card-foreground",
+                    isCompleted && "opacity-60"
                   )}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => onDelete(task.id)}
-                  aria-label="Delete task"
                 >
-                  <X className="h-4 w-4" />
-                </Button>
-              </li>
-            ))
+                  {onToggleCompletion && (
+                    <input
+                      type="checkbox"
+                      checked={isCompleted}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        onToggleCompletion(task.id, !isCompleted);
+                      }}
+                      className="h-4 w-4 mt-0.5 cursor-pointer shrink-0"
+                      aria-label={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <span className={cn(
+                      "font-medium text-sm",
+                      isCompleted && "line-through"
+                    )}>
+                      {task.title}
+                    </span>
+                    {task.description && (
+                      <p className={cn(
+                        "text-muted-foreground text-sm mt-0.5 line-clamp-2",
+                        isCompleted && "opacity-60"
+                      )}>
+                        {task.description}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => onDelete(task.id)}
+                    aria-label="Delete task"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </li>
+              );
+            })
           )}
         </ul>
       )}
@@ -759,7 +814,7 @@ function getTaskTableId(task) {
   return task.table_id || (KIND_TO_TABLE_ID[task.kind] || 'backlog');
 }
 
-function WorldStage({ tasks, positions, setPositions, tables, setTables, loading, error, onDelete, onUpdate, onTaskTableChange, onTableUpdate, onRequestDeleteTable, onLockToggle, todayStr }) {
+function WorldStage({ tasks, positions, setPositions, tables, setTables, loading, error, onDelete, onUpdate, onTaskTableChange, onTableUpdate, onRequestDeleteTable, onLockToggle, onToggleCompletion, todayStr }) {
   const dragInfoRef = useRef(null);
   const tableDragInfoRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
@@ -1094,6 +1149,7 @@ function WorldStage({ tasks, positions, setPositions, tables, setTables, loading
             onPointerCancel={handlePointerCancel(task.id)}
             onDelete={onDelete}
             onUpdate={onUpdate}
+            onToggleCompletion={onToggleCompletion}
           />
         );
       })}
@@ -1356,6 +1412,13 @@ function App() {
       });
   }, [view, dayDate]);
 
+  const handleToggleCompletion = useCallback(
+    (id, completed) => {
+      handleUpdateTask(id, { status: completed ? 'completed' : 'pending' });
+    },
+    [handleUpdateTask]
+  );
+
   const handleTaskTableChange = useCallback(
     (id, tableId, newScheduledDate = null) => {
       const kind = TABLE_ID_TO_KIND[tableId];
@@ -1480,6 +1543,7 @@ function App() {
               onTableUpdate={handleTableUpdate}
               onRequestDeleteTable={handleRequestDeleteTable}
               onLockToggle={handleLockToggle}
+              onToggleCompletion={handleToggleCompletion}
               todayStr={todayStr}
             />
           </WorldCamera>
@@ -1504,6 +1568,7 @@ function App() {
             setInitialScheduledDateForModal(dayDate);
             setTaskModalOpen(true);
           }}
+          onToggleCompletion={handleToggleCompletion}
         />
       )}
       </div>

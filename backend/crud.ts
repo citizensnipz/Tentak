@@ -60,8 +60,8 @@ export function createTask(
 
   const created_at = data.created_at ?? new Date().toISOString();
   const stmt = db.prepare(`
-    INSERT INTO tasks (title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     data.title.trim(),
@@ -75,7 +75,8 @@ export function createTask(
     data.external_owner ?? null,
     data.color ?? null,
     data.table_id ?? null,
-    data.scheduled_date ?? null
+    data.scheduled_date ?? null,
+    data.table_order ?? null
   );
   const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task;
   return row;
@@ -100,7 +101,7 @@ export function updateTask(db: Db, id: number, data: TaskUpdate): Task {
     id: existing.id,
   };
   db.prepare(`
-    UPDATE tasks SET title = ?, description = ?, status = ?, kind = ?, priority = ?, created_at = ?, completed_at = ?, related_event_id = ?, external_owner = ?, color = ?, table_id = ?, scheduled_date = ?
+    UPDATE tasks SET title = ?, description = ?, status = ?, kind = ?, priority = ?, created_at = ?, completed_at = ?, related_event_id = ?, external_owner = ?, color = ?, table_id = ?, scheduled_date = ?, table_order = ?
     WHERE id = ?
   `).run(
     merged.title,
@@ -115,6 +116,7 @@ export function updateTask(db: Db, id: number, data: TaskUpdate): Task {
     merged.color ?? null,
     merged.table_id ?? null,
     merged.scheduled_date ?? null,
+    merged.table_order ?? null,
     id
   );
   return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task;
@@ -347,7 +349,7 @@ export function deleteTable(db: Db, id: string, options?: DeleteTableOptions): v
   if (taskCount > 0) {
     const { moveTasksToBacklog, deleteTasks } = options ?? {};
     if (moveTasksToBacklog) {
-      db.prepare('UPDATE tasks SET table_id = NULL, kind = ? WHERE table_id = ?').run('backlog', id);
+      db.prepare('UPDATE tasks SET table_id = NULL, kind = ?, table_order = NULL WHERE table_id = ?').run('backlog', id);
     } else if (deleteTasks) {
       db.prepare('DELETE FROM tasks WHERE table_id = ?').run(id);
     } else {

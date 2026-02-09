@@ -2,7 +2,15 @@ import React, { useEffect } from 'react';
 import WorldCamera from '../WorldCamera.jsx';
 import { WorldStage } from '../components/WorldStage';
 import { AddMenu } from '../components/AddMenu';
-import { computeInitialPositionInTable, getTaskTableId } from '@/lib/board-utils';
+import {
+  computeInitialPositionInTable,
+  computeSnappedPositionInTable,
+  getTaskTableId,
+  CARD_HEIGHT,
+  CARD_GAP,
+  TABLE_HEADER_HEIGHT,
+  TABLE_CARD_INSET,
+} from '@/lib/board-utils';
 
 export function BoardView({
   tasks,
@@ -30,19 +38,57 @@ export function BoardView({
     setPositions((prev) => {
       const next = {};
       const tableCounts = {};
+      
       tasks.forEach((task) => {
-        if (prev[task.id]) {
-          next[task.id] = prev[task.id];
-        } else {
-          const tableId = getTaskTableId(task);
-          const table = tables.find((t) => t.id === tableId) || tables.find((t) => t.id === 'backlog') || tables[0];
-          if (table) {
-            const idx = tableCounts[tableId] ?? 0;
-            next[task.id] = computeInitialPositionInTable(idx, table);
-            tableCounts[tableId] = idx + 1;
+        // Check if task is snapped to a table (has table_order AND table_id)
+        const hasTableOrder = task.table_order !== null && task.table_order !== undefined;
+        const hasTableId = task.table_id !== null && task.table_id !== undefined;
+        const isSnapped = hasTableOrder && hasTableId;
+        
+        if (isSnapped) {
+          // Task is snapped: find table by table_id and recompute position
+          const snappedTable = tables.find((t) => t.id === task.table_id);
+          if (snappedTable) {
+            // Always recompute position from table + order (data-driven, deterministic)
+            // This ensures snapped cards move 1:1 with their table
+            next[task.id] = computeSnappedPositionInTable(task.table_order, snappedTable);
+          } else {
+            // Table not found - keep existing position or use fallback
+            if (prev[task.id]) {
+              next[task.id] = prev[task.id];
+            }
           }
+          return;
+        }
+        
+        // Task is not snapped - use existing logic for free-floating or kind-based cards
+        const tableId = getTaskTableId(task);
+        const table = tables.find((t) => t.id === tableId) || tables.find((t) => t.id === 'backlog') || tables[0];
+        
+        if (!table) {
+          // Keep existing position if table not found
+          if (prev[task.id]) {
+            next[task.id] = prev[task.id];
+          }
+          return;
+        }
+        
+        // Free-floating card or card in permanent table by kind (not snapped)
+        if (prev[task.id]) {
+          // Keep existing position
+          next[task.id] = prev[task.id];
+          const isPermanentTable = tableId === 'backlog' || tableId === 'today';
+          if (isPermanentTable && !tableCounts[tableId]) {
+            tableCounts[tableId] = 1;
+          }
+        } else {
+          // New task: compute initial position
+          const idx = tableCounts[tableId] ?? 0;
+          next[task.id] = computeInitialPositionInTable(idx, table);
+          tableCounts[tableId] = idx + 1;
         }
       });
+      
       return next;
     });
   }, [tasks, tables, setPositions]);

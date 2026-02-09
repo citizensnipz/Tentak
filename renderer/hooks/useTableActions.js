@@ -149,7 +149,7 @@ export function useTableActions({
             if (mode === 'tableOnly') {
               setTasks((prev) =>
                 prev.map((t) =>
-                  t.table_id === tableId ? { ...t, table_id: null, kind: 'backlog' } : t,
+                  t.table_id === tableId ? { ...t, table_id: null, kind: 'backlog', table_order: null } : t,
                 ),
               );
             } else if (mode === 'tableAndTasks') {

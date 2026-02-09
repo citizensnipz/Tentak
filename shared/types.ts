@@ -22,6 +22,8 @@ export interface Task {
   table_id: string | null;
   /** Optional date (YYYY-MM-DD) for day list / scheduling. */
   scheduled_date?: string | null;
+  /** Order index within the table (for snapped cards). Null for free-floating cards. */
+  table_order?: number | null;
 }
 
 export type EventKind = 'meeting' | 'personal' | 'reminder' | 'block';

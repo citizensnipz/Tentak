@@ -40,3 +40,10 @@ export {
   setOpenAIApiKey,
   clearOpenAIApiKey,
 } from './secureSettings.js';
+export {
+  loadChatMessages,
+  appendChatMessage,
+  MAX_CHAT_MESSAGES,
+  type ChatMessage,
+  type ChatMessageInsert,
+} from './chatMessages.js';

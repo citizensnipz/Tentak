@@ -24,7 +24,7 @@ export function getScheduleToday(db: Db, date: string): Event[] {
  */
 export function getTasksBacklog(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
     WHERE kind = 'backlog'
     ORDER BY created_at
@@ -37,7 +37,7 @@ export function getTasksBacklog(db: Db): Task[] {
  */
 export function getTasksScheduled(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
     WHERE kind = 'scheduled'
     ORDER BY created_at
@@ -50,7 +50,7 @@ export function getTasksScheduled(db: Db): Task[] {
  */
 export function getTasksWaiting(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
     WHERE status = 'waiting'
     ORDER BY created_at
@@ -79,7 +79,7 @@ export function getAllTables(db: Db): Table[] {
  */
 export function getAllTasks(db: Db): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
     ORDER BY created_at
   `);
@@ -91,7 +91,7 @@ export function getAllTasks(db: Db): Task[] {
  */
 export function getTasksByScheduledDate(db: Db, date: string): Task[] {
   const stmt = db.prepare(`
-    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date
+    SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
     WHERE scheduled_date = ?
     ORDER BY created_at

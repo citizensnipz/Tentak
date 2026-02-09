@@ -45,10 +45,20 @@ export type AgentAskResult =
   | { ok: true; reply: string }
   | { ok: false; error: string };
 
+export interface ChatMessageAPI {
+  id: string | number;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  usedLLM: boolean;
+}
+
 export interface TentakAPI {
   query(payload: QueryPayload): Promise<QueryResult>;
   mutate(payload: MutatePayload): Promise<MutateResult>;
   agentAsk(message: string): Promise<AgentAskResult>;
+  loadChatMessages(chatId?: string): Promise<{ ok: true; data: ChatMessageAPI[] } | { ok: false; error: string }>;
+  appendChatMessage(chatId: string, message: { role: string; content: string; timestamp?: number; usedLLM?: boolean }): Promise<{ ok: true; data: ChatMessageAPI } | { ok: false; error: string }>;
 }
 
 declare global {

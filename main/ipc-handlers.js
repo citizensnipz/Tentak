@@ -27,6 +27,8 @@ import {
   getOpenAIApiKey,
   setOpenAIApiKey,
   clearOpenAIApiKey,
+  loadChatMessages,
+  appendChatMessage,
 } from '../backend/dist/backend/index.js';
 import { runClawdbot } from '../agent/runClawdbot.js';
 
@@ -188,6 +190,26 @@ export function registerIpcHandlers(db) {
       };
     }
   });
+
+  // Chat: persisted messages, load and append (trimming handled in backend).
+  ipcMain.handle('tentak:chat:loadMessages', wrap((payload) => {
+    const chatId = payload?.chatId ?? 'default';
+    return loadChatMessages(db, String(chatId));
+  }));
+
+  ipcMain.handle('tentak:chat:appendMessage', wrap((payload) => {
+    const chatId = payload?.chatId ?? 'default';
+    const message = payload?.message;
+    if (!message || typeof message.role !== 'string' || typeof message.content !== 'string') {
+      throw new Error('appendMessage requires message with role and content');
+    }
+    return appendChatMessage(db, String(chatId), {
+      role: message.role,
+      content: message.content,
+      timestamp: typeof message.timestamp === 'number' ? message.timestamp : Date.now(),
+      usedLLM: Boolean(message.usedLLM),
+    });
+  }));
 
   // Secure settings: OpenAI API key management.
   ipcMain.handle('tentak:settings:getOpenAIApiKey', wrap(() => {

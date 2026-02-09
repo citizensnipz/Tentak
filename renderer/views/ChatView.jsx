@@ -27,6 +27,27 @@ export function ChatView() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Load persisted chat messages on mount (active chatId: default).
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.tentak?.loadChatMessages !== 'function') return;
+    window.tentak
+      .loadChatMessages('default')
+      .then((res) => {
+        if (res?.ok && Array.isArray(res.data)) setMessages(res.data);
+      })
+      .catch(() => {});
+  }, []);
+
+  const persistMessage = useCallback((msg) => {
+    if (typeof window.tentak?.appendChatMessage !== 'function') return;
+    window.tentak.appendChatMessage('default', {
+      role: msg.role,
+      content: msg.content,
+      timestamp: msg.timestamp,
+      usedLLM: msg.role === 'assistant' ? (msg.usedLLM === true) : false,
+    });
+  }, []);
+
   // Fetch context data for chat routing
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.tentak === 'undefined') return;
@@ -62,61 +83,57 @@ export function ChatView() {
 
         // If the agent API is not available, show a graceful message and return.
         if (typeof window === 'undefined' || !window.tentak || typeof window.tentak.agentAsk !== 'function') {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `agent-${baseTimestamp}-unavailable`,
-              role: 'assistant',
-              content:
-                'Clawdbot is not available in this build. The rest of Tentak continues to work normally.',
-              timestamp: baseTimestamp,
-              usedLLM: false,
-            },
-          ]);
+          const msg = {
+            id: `agent-${baseTimestamp}-unavailable`,
+            role: 'assistant',
+            content:
+              'Clawdbot is not available in this build. The rest of Tentak continues to work normally.',
+            timestamp: baseTimestamp,
+            usedLLM: false,
+          };
+          setMessages((prev) => [...prev, msg]);
+          persistMessage(msg);
           return;
         }
 
         const result = await window.tentak.agentAsk(content);
         if (result.ok && result.reply) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `agent-${baseTimestamp}`,
-              role: 'assistant',
-              content: result.reply,
-              timestamp: Date.now(),
-              usedLLM: result.usedLLM === true, // Only true if LLM was actually used
-            },
-          ]);
+          const msg = {
+            id: `agent-${baseTimestamp}`,
+            role: 'assistant',
+            content: result.reply,
+            timestamp: Date.now(),
+            usedLLM: result.usedLLM === true, // Only true if LLM was actually used
+          };
+          setMessages((prev) => [...prev, msg]);
+          persistMessage(msg);
         } else {
           const errorText = result && !result.ok && result.error ? result.error : 'Unknown agent error';
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `agent-${baseTimestamp}-error`,
-              role: 'assistant',
-              content: `Clawdbot failed to answer: ${errorText}`,
-              timestamp: Date.now(),
-              usedLLM: false,
-            },
-          ]);
-        }
-      } catch (err) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `agent-error-${Date.now()}`,
+          const msg = {
+            id: `agent-${baseTimestamp}-error`,
             role: 'assistant',
-            content: `Clawdbot encountered an unexpected error: ${String(err)}`,
+            content: `Clawdbot failed to answer: ${errorText}`,
             timestamp: Date.now(),
             usedLLM: false,
-          },
-        ]);
+          };
+          setMessages((prev) => [...prev, msg]);
+          persistMessage(msg);
+        }
+      } catch (err) {
+        const msg = {
+          id: `agent-error-${Date.now()}`,
+          role: 'assistant',
+          content: `Clawdbot encountered an unexpected error: ${String(err)}`,
+          timestamp: Date.now(),
+          usedLLM: false,
+        };
+        setMessages((prev) => [...prev, msg]);
+        persistMessage(msg);
       } finally {
         setIsSending(false);
       }
     },
-    [],
+    [persistMessage],
   );
 
   const handleSend = useCallback(async () => {
@@ -131,6 +148,7 @@ export function ChatView() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    persistMessage(userMessage);
     setInputValue('');
     inputRef.current?.focus();
 
@@ -167,6 +185,7 @@ export function ChatView() {
             usedLLM: false, // Local responses never use LLM
           };
           setMessages((prev) => [...prev, localResponse]);
+          persistMessage(localResponse);
         } else {
           // Slow path: send to agent (may use LLM if API key is configured)
           void sendToAgent(trimmed);
@@ -183,6 +202,7 @@ export function ChatView() {
             usedLLM: false, // Local responses never use LLM
           };
           setMessages((prev) => [...prev, localResponse]);
+          persistMessage(localResponse);
         } else {
           void sendToAgent(trimmed);
         }
@@ -199,11 +219,12 @@ export function ChatView() {
           usedLLM: false, // Local responses never use LLM
         };
         setMessages((prev) => [...prev, localResponse]);
+        persistMessage(localResponse);
       } else {
         void sendToAgent(trimmed);
       }
     }
-  }, [inputValue, isSending, sendToAgent, chatContext]);
+  }, [inputValue, isSending, sendToAgent, chatContext, persistMessage]);
 
   const handleKeyDown = useCallback(
     (e) => {

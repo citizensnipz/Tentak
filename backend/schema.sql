@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   external_owner TEXT,
   color TEXT,
   table_id TEXT,
-  scheduled_date TEXT
+  scheduled_date TEXT,
+  table_order INTEGER
 );
 
 -- Event: something that happens at a specific time.
@@ -62,3 +63,14 @@ CREATE TABLE IF NOT EXISTS tables (
   table_date TEXT,
   locked INTEGER NOT NULL DEFAULT 0
 );
+
+-- Chat messages: persisted per chatId, capped per thread.
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id TEXT NOT NULL DEFAULT 'default',
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  timestamp TEXT NOT NULL,
+  used_llm INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id_timestamp ON chat_messages (chat_id, timestamp);

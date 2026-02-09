@@ -47,6 +47,11 @@ export function openDb(dbPath: string): Db {
       /* column already exists */
     }
     try {
+      db.exec('ALTER TABLE tasks ADD COLUMN table_order INTEGER');
+    } catch {
+      /* column already exists */
+    }
+    try {
       db.exec(`
         CREATE TABLE IF NOT EXISTS tables (
           id TEXT PRIMARY KEY,
@@ -75,9 +80,26 @@ export function openDb(dbPath: string): Db {
     } catch {
       /* column already exists */
     }
+    ensureChatMessagesTable(db);
   }
 
   return db;
+}
+
+function ensureChatMessagesTable(db: Db): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL DEFAULT 'default',
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      used_llm INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id_timestamp ON chat_messages (chat_id, timestamp)'
+  );
 }
 
 function initializePermanentTables(db: Db): void {

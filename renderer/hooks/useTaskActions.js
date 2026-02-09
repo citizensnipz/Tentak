@@ -143,15 +143,31 @@ export function useTaskActions({
   );
 
   const changeTaskTable = useCallback(
-    (id, tableId, newScheduledDate = null) => {
+    (id, tableId, newScheduledDate = null, tableOrder = null) => {
       const kind = TABLE_ID_TO_KIND[tableId];
       const updates = { scheduled_date: newScheduledDate };
-      if (kind) {
-        updates.kind = kind;
+      
+      // If tableId is null, fully detach (clear everything)
+      if (tableId === null) {
         updates.table_id = null;
-      } else {
-        updates.table_id = tableId;
+        updates.table_order = null;
+        // Don't change kind - keep existing kind
+        updateTask(id, updates);
+        return;
       }
+      
+      if (kind) {
+        // Permanent table (backlog/today): set kind AND table_id for snapping
+        // This allows snapping while maintaining kind-based association
+        updates.kind = kind;
+        updates.table_id = tableId; // Set table_id for snapping (all tables behave the same)
+        updates.table_order = tableOrder; // All tables can use table_order for snapping
+      } else {
+        // Custom table: set table_id and table_order
+        updates.table_id = tableId;
+        updates.table_order = tableOrder;
+      }
+      
       updateTask(id, updates);
     },
     [updateTask],

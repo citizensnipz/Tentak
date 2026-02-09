@@ -15,11 +15,17 @@ import { TaskCard } from './TaskCard';
 import { Table } from './Table';
 import {
   CARD_WIDTH,
+  CARD_HEIGHT,
+  TABLE_HEADER_HEIGHT,
+  TABLE_CARD_INSET,
   computeScale,
   getTaskTableId,
   pointInTable,
   KIND_TO_TABLE_ID,
   DATE_REMIND_KEY,
+  cardIntersectsTable,
+  computeSnappedPositionInTable,
+  computeLayoutIndexForDrop,
 } from '@/lib/board-utils';
 
 export function WorldStage({
@@ -111,15 +117,33 @@ export function WorldStage({
         onTableUpdate(tableId, { x: table.x, y: table.y });
       }
 
+      // For snapped cards (with table_order AND table_id), positions are recomputed from table + layoutIndex
+      // Only update positions for free-floating cards (no table_order)
+      // Snapped cards will be recomputed by BoardView effect - DO NOT add deltas
       const dx = table ? table.x - info.tableStart.x : 0;
       const dy = table ? table.y - info.tableStart.y : 0;
       if (dx !== 0 || dy !== 0) {
         setPositions((prev) => {
           const next = { ...prev };
           for (const task of tasks) {
-            if (getTaskTableId(task) !== tableId) continue;
+            // Only update positions for cards that are NOT snapped
+            // Snapped cards have table_order and table_id, and their positions are computed from table + layoutIndex
+            const isSnapped = (task.table_order !== null && task.table_order !== undefined) &&
+                             (task.table_id === tableId);
+            
+            if (isSnapped) {
+              // Skip snapped cards - they will be recomputed by BoardView effect
+              continue;
+            }
+            
+            // For non-snapped cards, check if they're associated with this table
+            const taskTableId = getTaskTableId(task);
+            if (taskTableId !== tableId) continue;
+            
             const pos = prev[task.id];
             if (!pos) continue;
+            
+            // Update position for free-floating cards
             next[task.id] = { x: pos.x + dx, y: pos.y + dy };
           }
           return next;
@@ -227,31 +251,178 @@ export function WorldStage({
       const dy = (event.clientY - info.pointerStart.y) / scale;
       const finalPos = { x: info.cardStart.x + dx, y: info.cardStart.y + dy };
 
+      const task = tasks.find((t) => t.id === taskId);
+      // Determine current table: prioritize table_id (snapped) over kind-based
+      const currentTableId = task?.table_id || (task ? (KIND_TO_TABLE_ID[task.kind] || 'backlog') : 'backlog');
+
+      // Check if card intersects with any table
+      let snappedTable = null;
+      let snappedOrder = null;
+      let snappedPosition = finalPos;
+
       if (onTaskTableChange && tables.length > 0) {
-        const cx = finalPos.x + CARD_WIDTH / 2;
-        const cy = finalPos.y + 80 / 2;
         for (const table of tables) {
-          if (pointInTable(cx, cy, table)) {
-            const task = tasks.find((t) => t.id === taskId);
-            const currentTableId = task
-              ? (task.table_id || (KIND_TO_TABLE_ID[task.kind] || 'backlog'))
-              : 'backlog';
-            if (currentTableId !== table.id) {
-              const effectiveDate = table.id === 'today' ? todayStr : (table.table_date || null);
-              const newScheduledDate = effectiveDate || null;
-              const currentScheduled = (task?.scheduled_date || '').trim() || null;
-              const wouldChangeDate = currentScheduled !== newScheduledDate;
-              const taskHadDate = !!currentScheduled;
-              const dontRemind = typeof localStorage !== 'undefined' && localStorage.getItem(DATE_REMIND_KEY) === 'true';
-              if (wouldChangeDate && taskHadDate && !dontRemind) {
-                setDateChangePending({ taskId, tableId: table.id, newScheduledDate });
-              } else {
-                onTaskTableChange(taskId, table.id, newScheduledDate);
+          if (cardIntersectsTable(finalPos.x, finalPos.y, table)) {
+            snappedTable = table;
+            
+            // All tables use the same snapping logic
+            // Determine which tasks are in this table
+            const existingTasksInTable = tasks.filter(
+              (t) => {
+                // Check if task is assigned to this table
+                // Priority: table_id (for snapped cards) > kind-based (for permanent tables)
+                if (t.table_id === table.id) {
+                  // Task is snapped to this table via table_id
+                  return t.id !== taskId;
+                } else if ((table.id === 'backlog' || table.id === 'today') && !t.table_id) {
+                  // For permanent tables: check kind-based association only if no table_id
+                  const tTableId = KIND_TO_TABLE_ID[t.kind] || 'backlog';
+                  return tTableId === table.id && t.id !== taskId;
+                }
+                return false;
               }
-            }
+            );
+            
+            // Compute snapped position and layout index using column-based flow
+            snappedOrder = computeLayoutIndexForDrop(finalPos.x, finalPos.y, table, existingTasksInTable);
+            snappedPosition = computeSnappedPositionInTable(snappedOrder, table);
+            
             break;
           }
         }
+      }
+
+      // Update position to snapped position if snapped
+      if (snappedTable && snappedPosition) {
+        setPositions((prev) => ({
+          ...prev,
+          [taskId]: snappedPosition,
+        }));
+      }
+
+      // Handle table assignment
+      if (onTaskTableChange && snappedTable) {
+        const targetTableId = snappedTable.id;
+        const isPermanentTable = targetTableId === 'backlog' || targetTableId === 'today';
+        
+        // Check if card is actually moving to a different table
+        // For snapped cards, compare table_id; for non-snapped, compare effective table ID
+        const currentTableIdForSnapped = task?.table_id;
+        const isMovingToDifferentTable = currentTableIdForSnapped !== targetTableId;
+        
+        if (isMovingToDifferentTable) {
+          // Moving to a different table
+          // Get existing tasks in target table (only snapped cards with table_id matching)
+          const existingTasksInTargetTable = tasks.filter(
+            (t) => {
+              // Only consider tasks that are snapped to this table (have table_id matching)
+              return t.table_id === targetTableId && t.id !== taskId;
+            }
+          );
+          
+          // Shift existing tasks if inserting at occupied position
+          if (snappedOrder !== null) {
+            const occupiedIndices = new Set(
+              existingTasksInTargetTable
+                .filter(t => t.table_order !== null && t.table_order !== undefined)
+                .map(t => t.table_order ?? 0)
+            );
+            
+            if (occupiedIndices.has(snappedOrder)) {
+              // Shift tasks at/after the insertion point
+              existingTasksInTargetTable
+                .filter(t => {
+                  const order = t.table_order ?? 0;
+                  return order >= snappedOrder;
+                })
+                .forEach((t) => {
+                  const newOrder = (t.table_order ?? 0) + 1;
+                  onTaskTableChange(t.id, targetTableId, null, newOrder);
+                });
+            }
+          }
+          
+          const effectiveDate = targetTableId === 'today' ? todayStr : (snappedTable.table_date || null);
+          const newScheduledDate = effectiveDate || null;
+          const currentScheduled = (task?.scheduled_date || '').trim() || null;
+          const wouldChangeDate = currentScheduled !== newScheduledDate;
+          const taskHadDate = !!currentScheduled;
+          const dontRemind = typeof localStorage !== 'undefined' && localStorage.getItem(DATE_REMIND_KEY) === 'true';
+          if (wouldChangeDate && taskHadDate && !dontRemind) {
+            setDateChangePending({ taskId, tableId: targetTableId, newScheduledDate, tableOrder: snappedOrder });
+          } else {
+            onTaskTableChange(taskId, targetTableId, newScheduledDate, snappedOrder);
+          }
+        } else if (snappedOrder !== null && currentTableIdForSnapped === targetTableId) {
+          // Same table but order changed (reordering within table)
+          // Get existing tasks in this table (only snapped cards with table_id matching)
+          const existingTasksInTable = tasks.filter(
+            (t) => {
+              // Only consider tasks that are snapped to this table (have table_id matching)
+              return t.table_id === targetTableId && t.id !== taskId;
+            }
+          );
+          
+          const currentOrder = task?.table_order ?? null;
+          
+          // If moving to a different position, shift other tasks
+          if (currentOrder !== null && currentOrder !== snappedOrder) {
+            // Shift tasks between old and new position
+            const tasksToShift = existingTasksInTable.filter((t) => {
+              const order = t.table_order ?? 0;
+              if (currentOrder < snappedOrder) {
+                // Moving down: shift tasks between old and new position up
+                return order > currentOrder && order <= snappedOrder;
+              } else {
+                // Moving up: shift tasks between new and old position down
+                return order >= snappedOrder && order < currentOrder;
+              }
+            });
+            
+            // Update shifted tasks
+            tasksToShift.forEach((t) => {
+              const order = t.table_order ?? 0;
+              const newOrder = currentOrder < snappedOrder ? order - 1 : order + 1;
+              onTaskTableChange(t.id, targetTableId, null, newOrder);
+            });
+          }
+          
+          // Update the moved task
+          onTaskTableChange(taskId, targetTableId, null, snappedOrder);
+        }
+      } else if (snappedTable === null) {
+        // Card was dragged outside any table - fully detach it
+        // Check if card is currently assigned to a table (by table_id, not by kind)
+        const hasTableId = task?.table_id !== null && task?.table_id !== undefined;
+        
+        if (hasTableId) {
+          // Card has table_id set, so it's in a custom table - detach it
+          const currentTableId = task.table_id;
+          const currentOrder = task?.table_order ?? null;
+          
+          // Shift remaining cards in the table
+          if (currentOrder !== null) {
+            const remainingTasksInTable = tasks.filter(
+              (t) => t.table_id === currentTableId && t.id !== taskId
+            );
+            
+            // Shift tasks after the removed card down
+            remainingTasksInTable
+              .filter(t => {
+                const order = t.table_order ?? 0;
+                return order > currentOrder;
+              })
+              .forEach((t) => {
+                const newOrder = (t.table_order ?? 0) - 1;
+                onTaskTableChange(t.id, currentTableId, null, newOrder);
+              });
+          }
+          
+          // Fully detach: clear table_id and table_order
+          onTaskTableChange(taskId, null, null, null);
+        }
+        // If card doesn't have table_id, it's already free-floating or in a permanent table
+        // Permanent tables use kind-based association, so we don't detach those
       }
 
       if (event.currentTarget.releasePointerCapture) {
@@ -263,7 +434,7 @@ export function WorldStage({
       dragInfoRef.current = null;
       setDraggingId(null);
     },
-    [tables, tasks, onTaskTableChange, todayStr],
+    [tables, tasks, onTaskTableChange, todayStr, setPositions],
   );
 
   const handleDateChangeConfirm = useCallback(() => {
@@ -271,7 +442,12 @@ export function WorldStage({
       localStorage.setItem(DATE_REMIND_KEY, 'true');
     }
     if (dateChangePending && onTaskTableChange) {
-      onTaskTableChange(dateChangePending.taskId, dateChangePending.tableId, dateChangePending.newScheduledDate);
+      onTaskTableChange(
+        dateChangePending.taskId,
+        dateChangePending.tableId,
+        dateChangePending.newScheduledDate,
+        dateChangePending.tableOrder ?? null
+      );
     }
     setDateChangePending(null);
     setDontRemindChecked(false);
@@ -352,13 +528,29 @@ export function WorldStage({
         const basePosition = positions[task.id];
         if (!basePosition) return null;
         let position = basePosition;
-        if (draggingTableId && getTaskTableId(task) === draggingTableId && tableDragInfoRef.current) {
+        
+        // During table drag, update card positions
+        if (draggingTableId && tableDragInfoRef.current) {
           const table = tables.find((t) => t.id === draggingTableId);
           if (table) {
-            const { tableStart } = tableDragInfoRef.current;
-            const dx = table.x - tableStart.x;
-            const dy = table.y - tableStart.y;
-            position = { x: basePosition.x + dx, y: basePosition.y + dy };
+            // Check if card is snapped to this table
+            const isSnapped = (task.table_order !== null && task.table_order !== undefined) &&
+                             (task.table_id === draggingTableId);
+            
+            if (isSnapped) {
+              // For snapped cards, recompute position from current table position + layoutIndex
+              // This ensures 1:1 movement with table
+              position = computeSnappedPositionInTable(task.table_order, table);
+            } else {
+              // For non-snapped cards, use delta-based movement
+              const taskTableId = getTaskTableId(task);
+              if (taskTableId === draggingTableId) {
+                const { tableStart } = tableDragInfoRef.current;
+                const dx = table.x - tableStart.x;
+                const dy = table.y - tableStart.y;
+                position = { x: basePosition.x + dx, y: basePosition.y + dy };
+              }
+            }
           }
         }
         return (

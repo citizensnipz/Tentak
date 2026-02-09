@@ -20,6 +20,16 @@ contextBridge.exposeInMainWorld('tentak', {
     return ipcRenderer.invoke('tentak:agent:ask', { message });
   },
   /**
+   * Chat: load and append messages (persistence and trimming in backend).
+   */
+  loadChatMessages(chatId = 'default') {
+    return ipcRenderer.invoke('tentak:chat:loadMessages', { chatId });
+  },
+  appendChatMessage(chatId, message) {
+    return ipcRenderer.invoke('tentak:chat:appendMessage', { chatId, message });
+  },
+
+  /**
    * Settings: OpenAI API key management.
    * SECURITY: Key is stored securely in main process, never exposed to renderer.
    */

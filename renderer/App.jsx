@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { X, Pencil, LayoutGrid, ClipboardList, Plus, Calendar, LayoutDashboard, Lock, Unlock, MessageCircle, Send } from 'lucide-react';
+import { X, Pencil, LayoutGrid, ClipboardList, Plus, Calendar, LayoutDashboard, Lock, Unlock, MessageCircle, Send, Settings as SettingsIcon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,6 +74,9 @@ function computeScale(element) {
 }
 
 const CARD_HEADER_HEIGHT = 36;
+
+const BOARD_BG_COLOR_STORAGE_KEY = 'tentak.boardBackgroundColor';
+const DEFAULT_BOARD_BACKGROUND_COLOR = '#f4f4f5';
 
 function TaskCard({
   task,
@@ -831,6 +834,48 @@ function ChatView() {
   );
 }
 
+function SettingsView({ boardBackgroundColor, onBoardBackgroundColorChange }) {
+  const [localColor, setLocalColor] = useState(boardBackgroundColor || DEFAULT_BOARD_BACKGROUND_COLOR);
+
+  useEffect(() => {
+    setLocalColor(boardBackgroundColor || DEFAULT_BOARD_BACKGROUND_COLOR);
+  }, [boardBackgroundColor]);
+
+  function handleChange(e) {
+    const value = e.target.value;
+    setLocalColor(value);
+    if (onBoardBackgroundColorChange) {
+      onBoardBackgroundColorChange(value);
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full min-h-0 p-4 space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold mb-1">Appearance</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Customize how your board looks.
+        </p>
+        <div className="flex items-center gap-4">
+          <Label htmlFor="board-bg-color" className="text-sm font-medium">
+            Board background color
+          </Label>
+          <input
+            id="board-bg-color"
+            type="color"
+            value={localColor}
+            onChange={handleChange}
+            className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent p-0"
+          />
+          <span className="text-xs font-mono text-muted-foreground">
+            {localColor}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DayList({ date, onDateChange, tasks, loading, error, onDelete, onNewTask, onToggleCompletion }) {
   return (
     <div className="flex flex-col h-full min-h-0 p-4">
@@ -1278,6 +1323,7 @@ function App() {
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [view, setView] = useState('board');
+  const [boardBackgroundColor, setBoardBackgroundColor] = useState(DEFAULT_BOARD_BACKGROUND_COLOR);
   const [dayDate, setDayDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dayTasks, setDayTasks] = useState([]);
   const [dayLoading, setDayLoading] = useState(false);
@@ -1286,6 +1332,18 @@ function App() {
   const [deleteTablePending, setDeleteTablePending] = useState(null);
   const cameraRef = useRef(null);
   const todayStr = new Date().toISOString().slice(0, 10);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(BOARD_BG_COLOR_STORAGE_KEY);
+      if (stored) {
+        setBoardBackgroundColor(stored);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   // Data loading – tasks
   const fetchTasks = useCallback(() => {
@@ -1567,6 +1625,16 @@ function App() {
     [tables, handleTableUpdate]
   );
 
+  const handleBoardBackgroundColorChange = useCallback((color) => {
+    setBoardBackgroundColor(color);
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(BOARD_BG_COLOR_STORAGE_KEY, color);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
   const handleTableDelete = useCallback(
     (tableId, mode) => {
       if (typeof window.tentak === 'undefined') return;
@@ -1645,11 +1713,21 @@ function App() {
           <MessageCircle className="h-4 w-4 mr-1.5" />
           Chat
         </Button>
+        <Button
+          type="button"
+          variant={view === 'settings' ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={() => setView('settings')}
+          aria-pressed={view === 'settings'}
+        >
+          <SettingsIcon className="h-4 w-4 mr-1.5" />
+          Settings
+        </Button>
       </div>
       <div className="flex-1 min-h-0 flex flex-col">
       {view === 'board' && (
         <>
-          <WorldCamera ref={cameraRef}>
+          <WorldCamera ref={cameraRef} backgroundColor={boardBackgroundColor}>
             <WorldStage
               tasks={tasks}
               positions={positions}
@@ -1693,6 +1771,12 @@ function App() {
         />
       )}
       {view === 'chat' && <ChatView />}
+      {view === 'settings' && (
+        <SettingsView
+          boardBackgroundColor={boardBackgroundColor}
+          onBoardBackgroundColorChange={handleBoardBackgroundColorChange}
+        />
+      )}
       </div>
       {taskModalOpen && (
         <CreateTaskModal

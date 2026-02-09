@@ -1,7 +1,9 @@
 import React, { useRef, useImperativeHandle, forwardRef } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
-const WorldCamera = forwardRef(function WorldCamera({ children }, ref) {
+const DEFAULT_BOARD_BACKGROUND = '#f4f4f5';
+
+const WorldCamera = forwardRef(function WorldCamera({ children, backgroundColor }, ref) {
   const transformRef = useRef(null);
   const isInitializedRef = useRef(false);
 
@@ -95,7 +97,10 @@ const WorldCamera = forwardRef(function WorldCamera({ children }, ref) {
             minHeight: '100%',
           }}
         >
-          <div className="w-[3300px] h-[3300px] p-[150px] box-border bg-muted/30 relative">
+          <div
+            className="w-[3300px] h-[3300px] p-[150px] box-border relative"
+            style={{ backgroundColor: backgroundColor || DEFAULT_BOARD_BACKGROUND }}
+          >
             {children}
           </div>
         </TransformComponent>

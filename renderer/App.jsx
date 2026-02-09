@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { X, Pencil, LayoutGrid, ClipboardList, Plus, Calendar, LayoutDashboard, Lock, Unlock, MessageCircle, Send, Settings as SettingsIcon } from 'lucide-react';
+import { X, Pencil, LayoutGrid, ClipboardList, Plus, Calendar, LayoutDashboard, Lock, Unlock, MessageCircle, Send, Settings as SettingsIcon, Menu } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -876,6 +876,86 @@ function SettingsView({ boardBackgroundColor, onBoardBackgroundColorChange }) {
   );
 }
 
+function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }) {
+  const navItems = [
+    { id: 'board', label: 'Board', icon: LayoutDashboard },
+    { id: 'day', label: 'Day', icon: Calendar },
+    { id: 'chat', label: 'Chat', icon: MessageCircle },
+    { id: 'settings', label: 'Settings', icon: SettingsIcon },
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 transition-opacity duration-300"
+          onClick={onToggle}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Drawer - always visible closed state, overlays when open */}
+      <div
+        className={cn(
+          'fixed left-0 top-0 h-full bg-background border-r border-border z-50 transition-all duration-300 ease-in-out overflow-hidden',
+          isOpen ? 'w-64' : 'w-16'
+        )}
+      >
+        {/* Logo placeholder */}
+        <div className="h-16 flex items-center justify-center border-b border-border shrink-0">
+          {isOpen ? (
+            <div className="text-lg font-semibold">Tentak</div>
+          ) : (
+            <div className="w-8 h-8 rounded bg-primary/20 flex items-center justify-center">
+              <span className="text-xs font-bold">T</span>
+            </div>
+          )}
+        </div>
+
+        {/* Hamburger button */}
+        <div className="p-2 border-b border-border">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className="w-full"
+            aria-label={isOpen ? 'Close drawer' : 'Open drawer'}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </div>
+
+        {/* Navigation items */}
+        {isOpen && (
+          <nav className="flex flex-col p-2 gap-1 overflow-y-auto">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentView === item.id;
+              return (
+                <Button
+                  key={item.id}
+                  type="button"
+                  variant={isActive ? 'secondary' : 'ghost'}
+                  className="w-full justify-start"
+                  onClick={() => {
+                    onViewChange(item.id);
+                    onToggle(); // Close drawer after selection
+                  }}
+                >
+                  <Icon className="h-4 w-4 mr-2" />
+                  {item.label}
+                </Button>
+              );
+            })}
+          </nav>
+        )}
+      </div>
+    </>
+  );
+}
+
 function DayList({ date, onDateChange, tasks, loading, error, onDelete, onNewTask, onToggleCompletion }) {
   return (
     <div className="flex flex-col h-full min-h-0 p-4">
@@ -1330,6 +1410,7 @@ function App() {
   const [dayError, setDayError] = useState(null);
   const [initialScheduledDateForModal, setInitialScheduledDateForModal] = useState(null);
   const [deleteTablePending, setDeleteTablePending] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const cameraRef = useRef(null);
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -1681,50 +1762,14 @@ function App() {
   );
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="flex items-center gap-1 p-2 border-b border-border bg-background shrink-0">
-        <Button
-          type="button"
-          variant={view === 'board' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => setView('board')}
-          aria-pressed={view === 'board'}
-        >
-          <LayoutDashboard className="h-4 w-4 mr-1.5" />
-          Board
-        </Button>
-        <Button
-          type="button"
-          variant={view === 'day' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => setView('day')}
-          aria-pressed={view === 'day'}
-        >
-          <Calendar className="h-4 w-4 mr-1.5" />
-          Day
-        </Button>
-        <Button
-          type="button"
-          variant={view === 'chat' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => setView('chat')}
-          aria-pressed={view === 'chat'}
-        >
-          <MessageCircle className="h-4 w-4 mr-1.5" />
-          Chat
-        </Button>
-        <Button
-          type="button"
-          variant={view === 'settings' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => setView('settings')}
-          aria-pressed={view === 'settings'}
-        >
-          <SettingsIcon className="h-4 w-4 mr-1.5" />
-          Settings
-        </Button>
-      </div>
-      <div className="flex-1 min-h-0 flex flex-col">
+    <div className="h-screen overflow-hidden">
+      <NavigationDrawer
+        isOpen={drawerOpen}
+        onToggle={() => setDrawerOpen(!drawerOpen)}
+        currentView={view}
+        onViewChange={setView}
+      />
+      <div className="h-full min-h-0 flex flex-col ml-16 pl-6" style={{ width: 'calc(100% - 64px)' }}>
       {view === 'board' && (
         <>
           <WorldCamera ref={cameraRef} backgroundColor={boardBackgroundColor}>

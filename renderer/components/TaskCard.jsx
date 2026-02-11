@@ -44,26 +44,35 @@ export function TaskCard({
   const isCompleted = task.status === 'completed';
 
   useEffect(() => {
-    if (isEditing) {
-      setEditTitle(task.title);
-      setEditDescription(task.description || '');
-      setEditColor(task.color || DEFAULT_TASK_COLOR);
-      setEditScheduledDate(task.scheduled_date || '');
-      setShowColorPicker(false);
-      if (isControlled) onToggleExpand?.();
-      else setInternalCollapsed(false);
-      titleInputRef.current?.focus();
+    if (!isEditing) return;
+    setEditTitle(task.title);
+    setEditDescription(task.description || '');
+    setEditColor(task.color || DEFAULT_TASK_COLOR);
+    setEditScheduledDate(task.scheduled_date || '');
+    setShowColorPicker(false);
+    // Ensure the card is expanded when editing in uncontrolled mode.
+    // In controlled mode, the parent owns expansion state, and we avoid toggling it here
+    // to prevent conflicts that can cause flashing.
+    if (!isControlled) {
+      setInternalCollapsed(false);
     }
-  }, [isEditing, task.title, task.description, task.color, task.scheduled_date, isControlled, onToggleExpand]);
+    titleInputRef.current?.focus();
+  }, [isEditing, task.title, task.description, task.color, task.scheduled_date, isControlled]);
+
+  function handleCancelEdit() {
+    setShowColorPicker(false);
+    setIsEditing(false);
+    setEditTitle('');
+    setEditDescription('');
+    setEditColor('');
+    setEditScheduledDate('');
+  }
 
   useEffect(() => {
     if (!isEditing) return;
     function handleKeyDown(e) {
       if (e.key === 'Escape') {
-        setShowColorPicker(false);
-        setIsEditing(false);
-        setEditTitle('');
-        setEditDescription('');
+        handleCancelEdit();
       }
     }
     window.addEventListener('keydown', handleKeyDown);
@@ -266,6 +275,33 @@ export function TaskCard({
                 onPointerDown={(e) => e.stopPropagation()}
                 className="mt-1 h-8 text-sm"
               />
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleCancelEdit();
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleSave();
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                Save
+              </Button>
             </div>
           </>
         ) : (

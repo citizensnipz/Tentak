@@ -2,7 +2,6 @@
 -- Source of truth for tasks, events, reminders.
 -- Enums enforced via CHECK constraints.
 
--- Users: one row per profile. All tasks/tables/chat belong to a user.
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
@@ -10,7 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_path TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  last_backup_at TEXT
+  last_backup_at TEXT,
+  password_hash TEXT,
+  password_salt TEXT,
+  last_login_at TEXT
 );
 
 -- Task: something the user wants done. May or may not have dates.

@@ -26,6 +26,8 @@ import {
   BOARD_BG_COLOR_STORAGE_KEY,
   DEFAULT_BOARD_BACKGROUND_COLOR,
 } from '@/lib/board-utils';
+import { useAuth } from '@/auth/AuthContext';
+import { cn } from '@/lib/utils';
 
 function App() {
   // State initialization
@@ -47,6 +49,7 @@ function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const cameraRef = useRef(null);
   const todayStr = new Date().toISOString().slice(0, 10);
+  const { isAuthenticated, logout } = useAuth();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -98,13 +101,28 @@ function App() {
 
   useBoardEffects({ view, tables, tasks, setPositions, cameraRef });
 
+  const handleLogout = async () => {
+    await logout();
+    setTasks([]);
+    setDayTasks([]);
+    setPositions({});
+    setTables(DEFAULT_TABLES);
+    setView('board');
+  };
+
   return (
-    <div className="h-screen overflow-hidden">
+    <div
+      className={cn(
+        'h-screen overflow-hidden relative',
+        !isAuthenticated && 'pointer-events-none select-none blur-sm'
+      )}
+    >
       <NavigationDrawer
         isOpen={drawerOpen}
         onToggle={() => setDrawerOpen(!drawerOpen)}
         currentView={view}
         onViewChange={setView}
+        onLogout={handleLogout}
       />
       <div className="h-full min-h-0 flex flex-col ml-16" style={{ width: 'calc(100% - 64px)' }}>
         {view === 'board' && (

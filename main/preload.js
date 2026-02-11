@@ -55,6 +55,24 @@ contextBridge.exposeInMainWorld('tentak', {
   },
 
   /**
+   * Authentication: local-only auth (no cloud/OAuth).
+   */
+  auth: {
+    listUsers() {
+      return ipcRenderer.invoke('tentak:auth:listUsers');
+    },
+    signup(payload) {
+      return ipcRenderer.invoke('tentak:auth:signup', payload);
+    },
+    login(payload) {
+      return ipcRenderer.invoke('tentak:auth:login', payload);
+    },
+    logout() {
+      return ipcRenderer.invoke('tentak:auth:logout');
+    },
+  },
+
+  /**
    * Manual backup: run snapshot backup and return updated user (with last_backup_at).
    */
   backupNow() {

@@ -53,6 +53,18 @@ export interface ChatMessageAPI {
   usedLLM: boolean;
 }
 
+export interface AuthUserSummary {
+  id: number;
+  username: string;
+  email: string | null;
+  avatar_path: string | null;
+  created_at: string;
+  updated_at: string;
+  last_backup_at: string | null;
+  last_login_at: string | null;
+  hasPassword: boolean;
+}
+
 export type ProfileGetResult = { ok: true; data: User | null } | { ok: false; error: string };
 export type ProfileUpdateResult = { ok: true; data: User } | { ok: false; error: string };
 export type BackupNowResult = { ok: true; data: User } | { ok: false; error: string };
@@ -64,6 +76,12 @@ export interface TentakAPI {
   getAssetPath(name: string): Promise<{ ok: true; data: string } | { ok: false; error: string }>;
   loadChatMessages(chatId?: string): Promise<{ ok: true; data: ChatMessageAPI[] } | { ok: false; error: string }>;
   appendChatMessage(chatId: string, message: { role: string; content: string; timestamp?: number; usedLLM?: boolean }): Promise<{ ok: true; data: ChatMessageAPI } | { ok: false; error: string }>;
+  auth: {
+    listUsers(): Promise<{ ok: true; data: AuthUserSummary[] } | { ok: false; error: string }>;
+    signup(payload: { username: string; email?: string | null; password: string; avatar_path?: string | null }): Promise<{ ok: true; data: User } | { ok: false; error: string }>;
+    login(payload: { userId: number; password: string }): Promise<{ ok: true; data: User } | { ok: false; error: string }>;
+    logout(): Promise<{ ok: true; data: null } | { ok: false; error: string }>;
+  };
   profile: {
     get(): Promise<ProfileGetResult>;
     update(payload: { username?: string; email?: string; avatar_path?: string | null }): Promise<ProfileUpdateResult>;

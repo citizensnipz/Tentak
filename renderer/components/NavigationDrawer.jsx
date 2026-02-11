@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Calendar, LayoutDashboard, MessageCircle, Settings as SettingsIcon, Menu, User } from 'lucide-react';
+import { Calendar, LayoutDashboard, MessageCircle, Settings as SettingsIcon, Menu, User, LogOut } from 'lucide-react';
+import { useAuth } from '@/auth/AuthContext';
 
-export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }) {
+export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange, onLogout }) {
   const [logoUrl, setLogoUrl] = useState(null);
   const [iconUrl, setIconUrl] = useState(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState(null);
+  const { isAuthenticated } = useAuth();
 
   useEffect(() => {
     if (typeof window.tentak?.getAssetPath !== 'function') return;
@@ -123,6 +125,22 @@ export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }
                 </Button>
               );
             })}
+            {isAuthenticated && onLogout && (
+              <div className="mt-4 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full justify-start text-sm text-muted-foreground"
+                  onClick={() => {
+                    void onLogout();
+                    onToggle();
+                  }}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </Button>
+              </div>
+            )}
           </nav>
         )}
       </div>

@@ -93,6 +93,7 @@ export function openDb(dbPath: string): Db {
 /**
  * Migration: create users table if missing, create default user if none,
  * add user_id to tasks, tables, chat_messages and backfill with default user id.
+ * Also ensure password columns exist on users for authentication.
  */
 function runUserMigration(db: Db): void {
   db.exec(`
@@ -103,7 +104,10 @@ function runUserMigration(db: Db): void {
       avatar_path TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      last_backup_at TEXT
+      last_backup_at TEXT,
+      password_hash TEXT,
+      password_salt TEXT,
+      last_login_at TEXT
     )
   `);
 
@@ -122,6 +126,23 @@ function runUserMigration(db: Db): void {
   }
   try {
     db.exec('ALTER TABLE chat_messages ADD COLUMN user_id INTEGER NOT NULL DEFAULT ' + defaultUserId);
+  } catch {
+    /* column already exists */
+  }
+
+  // Ensure password-related columns exist for existing databases.
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+  } catch {
+    /* column already exists */
+  }
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN password_salt TEXT');
+  } catch {
+    /* column already exists */
+  }
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN last_login_at TEXT');
   } catch {
     /* column already exists */
   }

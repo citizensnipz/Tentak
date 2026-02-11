@@ -7,6 +7,7 @@ import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { pathToFileURL } from 'url';
+import crypto from 'crypto';
 
 const __dirnameIpc = dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = join(__dirnameIpc, '..', 'assets');
@@ -59,6 +60,8 @@ const MUTATE_OPERATIONS = [
   'tableDelete',
 ];
 
+let currentUserId = null;
+
 function wrap(handler) {
   return async (_event, payload) => {
     try {
@@ -70,10 +73,9 @@ function wrap(handler) {
   };
 }
 
-function getActiveUserId(db) {
-  const userId = getDefaultOrFirstUserId(db);
-  if (userId == null) throw new Error('No user found');
-  return userId;
+function getActiveUserId() {
+  if (currentUserId == null) throw new Error('Not authenticated');
+  return currentUserId;
 }
 
 export function registerIpcHandlers(db, userDataPath) {
@@ -87,7 +89,7 @@ export function registerIpcHandlers(db, userDataPath) {
       if (!QUERY_TYPES.includes(type)) {
         throw new Error(`Unknown query type: ${type}`);
       }
-      const userId = getActiveUserId(db);
+      const userId = getActiveUserId();
       switch (type) {
         case 'scheduleToday': {
           const date = params.date ?? new Date().toISOString().slice(0, 10);
@@ -125,7 +127,7 @@ export function registerIpcHandlers(db, userDataPath) {
       if (!MUTATE_OPERATIONS.includes(operation)) {
         throw new Error(`Unknown mutate operation: ${operation}`);
       }
-      const userId = getActiveUserId(db);
+      const userId = getActiveUserId();
       let result;
       switch (operation) {
         case 'taskCreate':
@@ -204,8 +206,7 @@ export function registerIpcHandlers(db, userDataPath) {
         throw new Error('agent:ask requires a non-empty message string');
       }
 
-      const userId = getDefaultOrFirstUserId(db);
-      if (userId == null) throw new Error('No user found');
+      const userId = getActiveUserId();
       const context = buildAgentContext(db, userId);
 
       // Check if OpenAI API key is configured
@@ -236,13 +237,13 @@ export function registerIpcHandlers(db, userDataPath) {
 
   // Chat: persisted messages, load and append (trimming handled in backend).
   ipcMain.handle('tentak:chat:loadMessages', wrap((payload) => {
-    const userId = getActiveUserId(db);
+    const userId = getActiveUserId();
     const chatId = payload?.chatId ?? 'default';
     return loadChatMessages(db, userId, String(chatId));
   }));
 
   ipcMain.handle('tentak:chat:appendMessage', wrap(async (payload) => {
-    const userId = getActiveUserId(db);
+    const userId = getActiveUserId();
     const chatId = payload?.chatId ?? 'default';
     const message = payload?.message;
     if (!message || typeof message.role !== 'string' || typeof message.content !== 'string') {
@@ -260,20 +261,20 @@ export function registerIpcHandlers(db, userDataPath) {
 
   // Profile: get current user, update profile.
   ipcMain.handle('tentak:profile:get', wrap(() => {
-    const userId = getActiveUserId(db);
+    const userId = getActiveUserId();
     const user = getUser(db, userId);
     return user ?? null;
   }));
 
   ipcMain.handle('tentak:profile:update', wrap((payload) => {
-    const userId = getActiveUserId(db);
+    const userId = getActiveUserId();
     const { username, email, avatar_path } = payload ?? {};
     return updateUser(db, userId, { username, email, avatar_path });
   }));
 
   // Manual backup.
   ipcMain.handle('tentak:backup:now', wrap(async () => {
-    const userId = getActiveUserId(db);
+    const userId = getActiveUserId();
     await runSnapshotBackup(db, userDataPath, userId);
     return getUser(db, userId);
   }));
@@ -292,6 +293,141 @@ export function registerIpcHandlers(db, userDataPath) {
     const path = payload?.path;
     if (typeof path !== 'string' || !path) return null;
     return pathToFileURL(path).href;
+  }));
+
+  // Authentication: local-only accounts with password hashing.
+  ipcMain.handle('tentak:auth:listUsers', wrap(() => {
+    const rows = db
+      .prepare(
+        `SELECT id, username, email, avatar_path, created_at, updated_at, last_backup_at, last_login_at, password_hash
+         FROM users
+         ORDER BY id ASC`
+      )
+      .all();
+    return rows.map((row) => ({
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      avatar_path: row.avatar_path,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      last_backup_at: row.last_backup_at,
+      last_login_at: row.last_login_at,
+      hasPassword: Boolean(row.password_hash),
+    }));
+  }));
+
+  ipcMain.handle('tentak:auth:signup', wrap((payload) => {
+    const { username, email, password, avatar_path } = payload ?? {};
+    if (typeof username !== 'string' || !username.trim()) {
+      throw new Error('Username is required');
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      throw new Error('Password must be at least 8 characters long');
+    }
+
+    const existing = db
+      .prepare('SELECT id FROM users WHERE username = ?')
+      .get(username.trim());
+    if (existing) {
+      throw new Error('Username already exists');
+    }
+
+    const now = new Date().toISOString();
+    const saltBuf = crypto.randomBytes(16);
+    const saltHex = saltBuf.toString('hex');
+    const hashBuf = crypto.pbkdf2Sync(password, saltHex, 100000, 64, 'sha512');
+    const hashHex = hashBuf.toString('hex');
+
+    const stmt = db.prepare(
+      `INSERT INTO users (username, email, avatar_path, created_at, updated_at, last_backup_at, password_hash, password_salt, last_login_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const result = stmt.run(
+      username.trim(),
+      email || null,
+      avatar_path || null,
+      now,
+      now,
+      null,
+      hashHex,
+      saltHex,
+      now
+    );
+    const id = Number(result.lastInsertRowid);
+    currentUserId = id;
+
+    const user = db
+      .prepare(
+        `SELECT id, username, email, avatar_path, created_at, updated_at, last_backup_at, last_login_at
+         FROM users WHERE id = ?`
+      )
+      .get(id);
+    return user;
+  }));
+
+  ipcMain.handle('tentak:auth:login', wrap((payload) => {
+    const { userId, password } = payload ?? {};
+    const id = Number(userId);
+    if (!id || Number.isNaN(id)) {
+      throw new Error('login requires userId');
+    }
+    if (typeof password !== 'string' || !password) {
+      throw new Error('Password is required');
+    }
+
+    const row = db
+      .prepare(
+        `SELECT id, username, password_hash, password_salt, updated_at
+         FROM users WHERE id = ?`
+      )
+      .get(id);
+    if (!row) throw new Error('User not found');
+
+    const now = new Date().toISOString();
+
+    if (!row.password_hash || !row.password_salt) {
+      // Legacy user without a password: treat this login as initial password set.
+      const saltBuf = crypto.randomBytes(16);
+      const saltHex = saltBuf.toString('hex');
+      const hashBuf = crypto.pbkdf2Sync(password, saltHex, 100000, 64, 'sha512');
+      const hashHex = hashBuf.toString('hex');
+      db.prepare(
+        `UPDATE users
+         SET password_hash = ?, password_salt = ?, last_login_at = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(hashHex, saltHex, now, now, id);
+    } else {
+      const saltHex = row.password_salt;
+      const expectedHex = row.password_hash;
+      const expectedBuf = Buffer.from(expectedHex, 'hex');
+      const actualBuf = crypto.pbkdf2Sync(password, saltHex, 100000, 64, 'sha512');
+      if (
+        expectedBuf.length !== actualBuf.length ||
+        !crypto.timingSafeEqual(expectedBuf, actualBuf)
+      ) {
+        throw new Error('Invalid password');
+      }
+      db.prepare(
+        `UPDATE users
+         SET last_login_at = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(now, now, id);
+    }
+
+    currentUserId = id;
+    const user = db
+      .prepare(
+        `SELECT id, username, email, avatar_path, created_at, updated_at, last_backup_at, last_login_at
+         FROM users WHERE id = ?`
+      )
+      .get(id);
+    return user;
+  }));
+
+  ipcMain.handle('tentak:auth:logout', wrap(() => {
+    currentUserId = null;
+    return null;
   }));
 
   // Secure settings: OpenAI API key management.

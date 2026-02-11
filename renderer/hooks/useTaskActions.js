@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react';
+import { useAuth } from '@/auth/AuthContext';
 import { TABLE_ID_TO_KIND } from '@/lib/board-utils';
 
 export function useTaskActions({
@@ -13,6 +14,8 @@ export function useTaskActions({
   setDayTasks,
   setPositions,
 }) {
+  const { isAuthenticated } = useAuth();
+
   // Load all tasks on mount
   const fetchTasks = useCallback(() => {
     if (typeof window === 'undefined' || typeof window.tentak === 'undefined') {
@@ -42,8 +45,9 @@ export function useTaskActions({
   }, [setError, setLoading, setTasks]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     fetchTasks();
-  }, [fetchTasks]);
+  }, [fetchTasks, isAuthenticated]);
 
   // Load tasks for the current day in Day view
   const fetchDayTasks = useCallback(() => {
@@ -61,8 +65,9 @@ export function useTaskActions({
   }, [dayDate, setDayError, setDayLoading, setDayTasks]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     if (view === 'day') fetchDayTasks();
-  }, [view, fetchDayTasks]);
+  }, [view, fetchDayTasks, isAuthenticated]);
 
   const createTask = useCallback(
     ({ title, description, color, scheduled_date }) => {

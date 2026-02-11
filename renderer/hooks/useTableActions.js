@@ -8,6 +8,7 @@ import {
   DEFAULT_TABLE_HEIGHT,
   BOARD_BG_COLOR_STORAGE_KEY,
 } from '@/lib/board-utils';
+import { useAuth } from '@/auth/AuthContext';
 
 export function useTableActions({
   tasks,
@@ -18,6 +19,8 @@ export function useTableActions({
   setDeleteTablePending,
   setBoardBackgroundColor,
 }) {
+  const { isAuthenticated } = useAuth();
+
   // Load tables from the database and merge with defaults
   const fetchTables = useCallback(() => {
     if (typeof window === 'undefined' || typeof window.tentak === 'undefined') {
@@ -58,8 +61,9 @@ export function useTableActions({
   }, [setTables]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     fetchTables();
-  }, [fetchTables]);
+  }, [fetchTables, isAuthenticated]);
 
   const createTable = useCallback(
     ({ name, color, table_date }) => {

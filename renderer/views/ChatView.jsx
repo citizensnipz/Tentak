@@ -4,6 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { Send, Sparkles, User } from 'lucide-react';
 import { routeChatMessage } from '@/utils/chatRouter';
+import { useAuth } from '@/auth/AuthContext';
 
 const AVATAR_SIZE = 'h-8 w-8';
 
@@ -22,6 +23,7 @@ export function ChatView() {
   });
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const { isAuthenticated } = useAuth();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -33,6 +35,7 @@ export function ChatView() {
 
   // Load persisted chat messages on mount (active chatId: default).
   useEffect(() => {
+    if (!isAuthenticated) return;
     if (typeof window === 'undefined' || typeof window.tentak?.loadChatMessages !== 'function') return;
     window.tentak
       .loadChatMessages('default')
@@ -40,18 +43,20 @@ export function ChatView() {
         if (res?.ok && Array.isArray(res.data)) setMessages(res.data);
       })
       .catch(() => {});
-  }, []);
+  }, [isAuthenticated]);
 
   // Tentak logo for assistant messages
   useEffect(() => {
+    if (!isAuthenticated) return;
     if (typeof window?.tentak?.getAssetPath !== 'function') return;
     window.tentak.getAssetPath('logo.png').then((res) => {
       if (res?.ok && res.data) setLogoUrl(res.data);
     });
-  }, []);
+  }, [isAuthenticated]);
 
   // User avatar for user messages
   useEffect(() => {
+    if (!isAuthenticated) return;
     if (typeof window?.tentak?.profile?.get !== 'function') return;
     window.tentak.profile.get().then((res) => {
       if (!res?.ok || !res.data?.avatar_path) {
@@ -62,7 +67,7 @@ export function ChatView() {
         setUserAvatarUrl(urlRes?.ok && urlRes.data ? urlRes.data : null);
       });
     });
-  }, []);
+  }, [isAuthenticated]);
 
   const persistMessage = useCallback((msg) => {
     if (typeof window.tentak?.appendChatMessage !== 'function') return;
@@ -76,6 +81,7 @@ export function ChatView() {
 
   // Fetch context data for chat routing
   useEffect(() => {
+    if (!isAuthenticated) return;
     if (typeof window === 'undefined' || typeof window.tentak === 'undefined') return;
 
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -99,7 +105,7 @@ export function ChatView() {
       .catch(() => {
         // Silently fail - context will be empty, router will route to agent
       });
-  }, []);
+  }, [isAuthenticated]);
 
   const sendToAgent = useCallback(
     async (content) => {

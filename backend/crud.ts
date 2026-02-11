@@ -51,6 +51,7 @@ export type TaskInsert = Omit<Task, 'id' | 'created_at'> & {
 
 export function createTask(
   db: Db,
+  userId: number,
   data: TaskInsert
 ): Task {
   assert(typeof data.title === 'string' && data.title.trim() !== '', 'Task title is required');
@@ -60,10 +61,11 @@ export function createTask(
 
   const created_at = data.created_at ?? new Date().toISOString();
   const stmt = db.prepare(`
-    INSERT INTO tasks (title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (user_id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
+    userId,
     data.title.trim(),
     data.description ?? null,
     data.status,
@@ -78,14 +80,15 @@ export function createTask(
     data.scheduled_date ?? null,
     data.table_order ?? null
   );
-  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task;
-  return row;
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task & { user_id?: number };
+  const { user_id: _u, ...task } = row;
+  return task as Task;
 }
 
 export type TaskUpdate = Partial<Omit<Task, 'id'>>;
 
-export function updateTask(db: Db, id: number, data: TaskUpdate): Task {
-  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task | undefined;
+export function updateTask(db: Db, userId: number, id: number, data: TaskUpdate): Task {
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, userId) as (Task & { user_id?: number }) | undefined;
   assert(existing !== undefined, `Task not found: ${id}`);
 
   if (data.title !== undefined) {
@@ -102,7 +105,7 @@ export function updateTask(db: Db, id: number, data: TaskUpdate): Task {
   };
   db.prepare(`
     UPDATE tasks SET title = ?, description = ?, status = ?, kind = ?, priority = ?, created_at = ?, completed_at = ?, related_event_id = ?, external_owner = ?, color = ?, table_id = ?, scheduled_date = ?, table_order = ?
-    WHERE id = ?
+    WHERE id = ? AND user_id = ?
   `).run(
     merged.title,
     merged.description ?? null,
@@ -117,13 +120,16 @@ export function updateTask(db: Db, id: number, data: TaskUpdate): Task {
     merged.table_id ?? null,
     merged.scheduled_date ?? null,
     merged.table_order ?? null,
-    id
+    id,
+    userId
   );
-  return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task;
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task & { user_id?: number };
+  const { user_id: _u, ...task } = row;
+  return task as Task;
 }
 
-export function deleteTask(db: Db, id: number): void {
-  const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+export function deleteTask(db: Db, userId: number, id: number): void {
+  const result = db.prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?').run(id, userId);
   assert(result.changes > 0, `Task not found: ${id}`);
 }
 
@@ -253,7 +259,7 @@ function tableRowToTable(row: TableRow): Table {
 
 export type TableInsert = Omit<Table, 'id'> & { id?: string };
 
-export function createTable(db: Db, data: TableInsert): Table {
+export function createTable(db: Db, userId: number, data: TableInsert): Table {
   // Title is required unless table_date is provided
   const hasDate = data.table_date && data.table_date.trim() !== '';
   if (!hasDate) {
@@ -272,11 +278,12 @@ export function createTable(db: Db, data: TableInsert): Table {
   const titleValue = data.title ? data.title.trim() : '';
   const locked = data.locked ? 1 : 0;
   const stmt = db.prepare(`
-    INSERT INTO tables (id, title, color, x, y, width, height, is_permanent, table_date, locked)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tables (id, user_id, title, color, x, y, width, height, is_permanent, table_date, locked)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     id,
+    userId,
     titleValue,
     data.color ?? null,
     data.x,
@@ -292,8 +299,8 @@ export function createTable(db: Db, data: TableInsert): Table {
 
 export type TableUpdate = Partial<Omit<Table, 'id'>>;
 
-export function updateTable(db: Db, id: string, data: TableUpdate): Table {
-  const existing = db.prepare('SELECT * FROM tables WHERE id = ?').get(id) as TableRow | undefined;
+export function updateTable(db: Db, userId: number, id: string, data: TableUpdate): Table {
+  const existing = db.prepare('SELECT * FROM tables WHERE id = ? AND user_id = ?').get(id, userId) as TableRow | undefined;
   assert(existing !== undefined, `Table not found: ${id}`);
 
   if (data.title !== undefined) {
@@ -317,7 +324,7 @@ export function updateTable(db: Db, id: string, data: TableUpdate): Table {
   const lockedNum = merged.locked ? 1 : 0;
   db.prepare(`
     UPDATE tables SET title = ?, color = ?, x = ?, y = ?, width = ?, height = ?, is_permanent = ?, table_date = ?, locked = ?
-    WHERE id = ?
+    WHERE id = ? AND user_id = ?
   `).run(
     merged.title,
     merged.color ?? null,
@@ -328,7 +335,8 @@ export function updateTable(db: Db, id: string, data: TableUpdate): Table {
     merged.is_permanent,
     merged.table_date ?? null,
     lockedNum,
-    id
+    id,
+    userId
   );
   return tableRowToTable(db.prepare('SELECT * FROM tables WHERE id = ?').get(id) as TableRow);
 }
@@ -340,23 +348,23 @@ export type DeleteTableOptions = {
   deleteTasks?: boolean;
 };
 
-export function deleteTable(db: Db, id: string, options?: DeleteTableOptions): void {
-  const table = db.prepare('SELECT id FROM tables WHERE id = ?').get(id);
+export function deleteTable(db: Db, userId: number, id: string, options?: DeleteTableOptions): void {
+  const table = db.prepare('SELECT id FROM tables WHERE id = ? AND user_id = ?').get(id, userId);
   assert(table !== undefined, `Table not found: ${id}`);
 
-  const taskCount = (db.prepare('SELECT COUNT(*) as n FROM tasks WHERE table_id = ?').get(id) as { n: number }).n;
+  const taskCount = (db.prepare('SELECT COUNT(*) as n FROM tasks WHERE table_id = ? AND user_id = ?').get(id, userId) as { n: number }).n;
 
   if (taskCount > 0) {
     const { moveTasksToBacklog, deleteTasks } = options ?? {};
     if (moveTasksToBacklog) {
-      db.prepare('UPDATE tasks SET table_id = NULL, kind = ?, table_order = NULL WHERE table_id = ?').run('backlog', id);
+      db.prepare('UPDATE tasks SET table_id = NULL, kind = ?, table_order = NULL WHERE table_id = ? AND user_id = ?').run('backlog', id, userId);
     } else if (deleteTasks) {
-      db.prepare('DELETE FROM tasks WHERE table_id = ?').run(id);
+      db.prepare('DELETE FROM tasks WHERE table_id = ? AND user_id = ?').run(id, userId);
     } else {
       throw new Error('Table has associated tasks. Specify moveTasksToBacklog or deleteTasks.');
     }
   }
 
-  const result = db.prepare('DELETE FROM tables WHERE id = ?').run(id);
+  const result = db.prepare('DELETE FROM tables WHERE id = ? AND user_id = ?').run(id, userId);
   assert(result.changes > 0, `Table not found: ${id}`);
 }

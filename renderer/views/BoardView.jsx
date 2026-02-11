@@ -6,10 +6,7 @@ import {
   computeInitialPositionInTable,
   computeSnappedPositionInTable,
   getTaskTableId,
-  CARD_HEIGHT,
-  CARD_GAP,
-  TABLE_HEADER_HEIGHT,
-  TABLE_CARD_INSET,
+  minTableWidthForTasks,
 } from '@/lib/board-utils';
 
 export function BoardView({
@@ -92,6 +89,20 @@ export function BoardView({
       return next;
     });
   }, [tasks, tables, setPositions]);
+
+  useEffect(() => {
+    if (tables.length === 0) return;
+    setTables((prev) => {
+      const next = prev.map((table) => {
+        const tasksInTable = tasks.filter((t) => t.table_id === table.id && t.table_order != null);
+        const minWidth = minTableWidthForTasks(tasksInTable.length, table);
+        if (table.width < minWidth) return { ...table, width: minWidth };
+        return table;
+      });
+      const changed = next.some((t, i) => t.width !== prev[i].width);
+      return changed ? next : prev;
+    });
+  }, [tasks, tables, setTables]);
 
   return (
     <>

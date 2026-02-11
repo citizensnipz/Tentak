@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Calendar, LayoutDashboard, MessageCircle, Settings as SettingsIcon, Menu } from 'lucide-react';
+import { Calendar, LayoutDashboard, MessageCircle, Settings as SettingsIcon, Menu, User } from 'lucide-react';
 
 export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }) {
   const [logoUrl, setLogoUrl] = useState(null);
   const [iconUrl, setIconUrl] = useState(null);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState(null);
 
   useEffect(() => {
     if (typeof window.tentak?.getAssetPath !== 'function') return;
@@ -17,10 +18,24 @@ export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }
     });
   }, []);
 
+  useEffect(() => {
+    if (!isOpen || typeof window.tentak?.profile?.get !== 'function') return;
+    window.tentak.profile.get().then((res) => {
+      if (!res?.ok || !res.data?.avatar_path) {
+        setProfileAvatarUrl(null);
+        return;
+      }
+      window.tentak.profile.getAvatarUrl(res.data.avatar_path).then((urlRes) => {
+        setProfileAvatarUrl(urlRes?.ok && urlRes.data ? urlRes.data : null);
+      });
+    });
+  }, [isOpen]);
+
   const navItems = [
     { id: 'board', label: 'Board', icon: LayoutDashboard },
     { id: 'day', label: 'Day', icon: Calendar },
     { id: 'chat', label: 'Chat', icon: MessageCircle },
+    { id: 'profile', label: 'Profile', icon: User },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
 
@@ -81,6 +96,8 @@ export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentView === item.id;
+              const isProfile = item.id === 'profile';
+              const showAvatar = isProfile && profileAvatarUrl;
               return (
                 <Button
                   key={item.id}
@@ -92,7 +109,16 @@ export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange }
                     onToggle(); // Close drawer after selection
                   }}
                 >
-                  <Icon className="h-4 w-4 mr-2" />
+                  {showAvatar ? (
+                    <img
+                      src={profileAvatarUrl}
+                      alt=""
+                      className="h-4 w-4 rounded-full object-cover mr-2 shrink-0"
+                      aria-hidden
+                    />
+                  ) : (
+                    <Icon className="h-4 w-4 mr-2 shrink-0" />
+                  )}
                   {item.label}
                 </Button>
               );

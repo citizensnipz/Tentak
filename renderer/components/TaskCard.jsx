@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { X, Pencil } from 'lucide-react';
+import { X, Pencil, GripVertical } from 'lucide-react';
 import { ColorPicker } from './ColorPicker';
 import { DEFAULT_TASK_COLOR, CARD_WIDTH, getTextColorForBackground } from '@/lib/board-utils';
 
@@ -13,6 +13,8 @@ export function TaskCard({
   task,
   position,
   isDragging,
+  isExpanded,
+  onToggleExpand,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -27,8 +29,15 @@ export function TaskCard({
   const [editColor, setEditColor] = useState('');
   const [editScheduledDate, setEditScheduledDate] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [internalCollapsed, setInternalCollapsed] = useState(true);
   const titleInputRef = useRef(null);
   const cardRef = useRef(null);
+
+  const isControlled = isExpanded !== undefined && onToggleExpand != null;
+  const isCollapsed = isControlled ? !isExpanded : internalCollapsed;
+  const handleCollapseToggle = isControlled
+    ? onToggleExpand
+    : () => setInternalCollapsed((c) => !c);
 
   const headerColor = task.color || DEFAULT_TASK_COLOR;
   const headerTextColor = getTextColorForBackground(headerColor);
@@ -41,9 +50,11 @@ export function TaskCard({
       setEditColor(task.color || DEFAULT_TASK_COLOR);
       setEditScheduledDate(task.scheduled_date || '');
       setShowColorPicker(false);
+      if (isControlled) onToggleExpand?.();
+      else setInternalCollapsed(false);
       titleInputRef.current?.focus();
     }
-  }, [isEditing, task.title, task.description, task.color, task.scheduled_date]);
+  }, [isEditing, task.title, task.description, task.color, task.scheduled_date, isControlled, onToggleExpand]);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -100,27 +111,43 @@ export function TaskCard({
       ref={cardRef}
       className={cn(
         'task-card p-0 rounded-xl border border-border bg-background font-sans',
-        isEditing ? 'overflow-visible select-text touch-auto cursor-default' : 'overflow-hidden select-none touch-none cursor-grab',
+        isEditing ? 'overflow-visible select-text touch-auto cursor-default' : 'overflow-hidden select-none touch-none cursor-default',
         isDragging && 'shadow-lg cursor-grabbing z-[5]',
-        !isDragging && 'shadow z-[1]',
+        !isDragging && !isCollapsed && 'z-[2]',
+        !isDragging && isCollapsed && 'z-[1]',
         isCompleted && !isEditing && 'opacity-75'
       )}
       style={cardStyle}
-      onPointerDown={isEditing ? undefined : onPointerDown}
-      onPointerMove={isEditing ? undefined : onPointerMove}
-      onPointerUp={isEditing ? undefined : onPointerUp}
-      onPointerCancel={isEditing ? undefined : onPointerCancel}
     >
       <div
         className={cn(
-          "flex items-center h-9 px-3 pr-9",
+          "flex items-center gap-2 h-9 px-3",
           isCompleted && !isEditing && "opacity-60"
         )}
         style={{
           backgroundColor: isEditing ? editColor || DEFAULT_TASK_COLOR : headerColor,
           color: isEditing ? getTextColorForBackground(editColor || DEFAULT_TASK_COLOR) : headerTextColor,
         }}
+        onClick={() => {
+          if (isEditing) return;
+          handleCollapseToggle();
+        }}
       >
+        <button
+          type="button"
+          className="shrink-0 flex items-center w-6 h-6 justify-center cursor-grab active:cursor-grabbing text-inherit bg-transparent border-0 p-0"
+          onPointerDown={isEditing ? undefined : onPointerDown}
+          onPointerMove={isEditing ? undefined : onPointerMove}
+          onPointerUp={isEditing ? undefined : onPointerUp}
+          onPointerCancel={isEditing ? undefined : onPointerCancel}
+          onClick={(e) => {
+            // Prevent header click from toggling collapse
+            e.stopPropagation();
+          }}
+          aria-label="Drag task"
+        >
+          <GripVertical className="h-4 w-4" aria-hidden />
+        </button>
         {onToggleCompletion && (
           <input
             type="checkbox"
@@ -154,10 +181,12 @@ export function TaskCard({
             className="flex-1 h-8 text-sm font-semibold bg-white/20 border-white/20"
           />
         ) : (
-          <span className={cn(
-            "text-sm font-semibold leading-tight overflow-hidden text-ellipsis whitespace-nowrap flex-1",
-            isCompleted && "line-through"
-          )}>
+          <span
+            className={cn(
+              "text-sm font-semibold leading-tight overflow-hidden text-ellipsis whitespace-nowrap flex-1 cursor-pointer",
+              isCompleted && "line-through"
+            )}
+          >
             {task.title}
           </span>
         )}
@@ -165,19 +194,28 @@ export function TaskCard({
           type="button"
           variant="ghost"
           size="icon"
-          className="absolute top-1.5 right-1.5 h-6 w-6 text-inherit opacity-80 hover:opacity-100"
+          className="h-6 w-6 shrink-0 text-inherit opacity-80 hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
             onDelete(task.id);
           }}
-          onPointerDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+          }}
           aria-label="Delete task"
         >
           <X className="h-4 w-4" />
         </Button>
       </div>
-      <div className="p-3 min-h-11">
+      <div
+        className="overflow-hidden transition-[max-height,opacity] duration-200 ease-out"
+        style={{
+          maxHeight: isCollapsed ? 0 : 280,
+          opacity: isCollapsed ? 0 : 1,
+        }}
+      >
+        <div className="p-3 min-h-11">
         {isEditing ? (
           <>
             <div className="mb-2 flex items-center gap-2 relative">
@@ -240,23 +278,26 @@ export function TaskCard({
                 {task.description}
               </span>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute bottom-1.5 right-1.5 h-6 w-6 text-muted-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsEditing(true);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              aria-label="Edit task"
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
+            {!isCollapsed && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute bottom-1.5 right-1.5 h-6 w-6 text-muted-foreground"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setIsEditing(true);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                aria-label="Edit task"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
           </>
         )}
+        </div>
       </div>
     </div>
   );

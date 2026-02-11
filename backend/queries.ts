@@ -20,54 +20,55 @@ export function getScheduleToday(db: Db, date: string): Event[] {
 }
 
 /**
- * Backlog tasks: tasks with kind = 'backlog'.
+ * Backlog tasks: tasks with kind = 'backlog' for the given user.
  */
-export function getTasksBacklog(db: Db): Task[] {
+export function getTasksBacklog(db: Db, userId: number): Task[] {
   const stmt = db.prepare(`
     SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
-    WHERE kind = 'backlog'
+    WHERE user_id = ? AND kind = 'backlog'
     ORDER BY created_at
   `);
-  return stmt.all() as Task[];
+  return stmt.all(userId) as Task[];
 }
 
 /**
- * Scheduled tasks: tasks with kind = 'scheduled' (Today table).
+ * Scheduled tasks: tasks with kind = 'scheduled' (Today table) for the given user.
  */
-export function getTasksScheduled(db: Db): Task[] {
+export function getTasksScheduled(db: Db, userId: number): Task[] {
   const stmt = db.prepare(`
     SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
-    WHERE kind = 'scheduled'
+    WHERE user_id = ? AND kind = 'scheduled'
     ORDER BY created_at
   `);
-  return stmt.all() as Task[];
+  return stmt.all(userId) as Task[];
 }
 
 /**
- * Tasks waiting on others: tasks with status = 'waiting'.
+ * Tasks waiting on others: tasks with status = 'waiting' for the given user.
  */
-export function getTasksWaiting(db: Db): Task[] {
+export function getTasksWaiting(db: Db, userId: number): Task[] {
   const stmt = db.prepare(`
     SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
-    WHERE status = 'waiting'
+    WHERE user_id = ? AND status = 'waiting'
     ORDER BY created_at
   `);
-  return stmt.all() as Task[];
+  return stmt.all(userId) as Task[];
 }
 
 /**
- * All tables: returns all tables from the database.
+ * All tables: returns all tables for the given user.
  */
-export function getAllTables(db: Db): Table[] {
+export function getAllTables(db: Db, userId: number): Table[] {
   const stmt = db.prepare(`
     SELECT id, title, color, x, y, width, height, is_permanent, table_date, locked
     FROM tables
+    WHERE user_id = ?
     ORDER BY is_permanent DESC, id
   `);
-  const rows = stmt.all() as (Table & { locked?: number })[];
+  const rows = stmt.all(userId) as (Table & { locked?: number })[];
   return rows.map((r) => ({
     ...r,
     locked: Boolean(r.locked),
@@ -75,26 +76,27 @@ export function getAllTables(db: Db): Table[] {
 }
 
 /**
- * All tasks: returns all tasks from the database.
+ * All tasks: returns all tasks for the given user.
  */
-export function getAllTasks(db: Db): Task[] {
+export function getAllTasks(db: Db, userId: number): Task[] {
   const stmt = db.prepare(`
     SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
+    WHERE user_id = ?
     ORDER BY created_at
   `);
-  return stmt.all() as Task[];
+  return stmt.all(userId) as Task[];
 }
 
 /**
- * Tasks scheduled for a given date (YYYY-MM-DD). Used by Day List view.
+ * Tasks scheduled for a given date (YYYY-MM-DD) for the given user. Used by Day List view.
  */
-export function getTasksByScheduledDate(db: Db, date: string): Task[] {
+export function getTasksByScheduledDate(db: Db, date: string, userId: number): Task[] {
   const stmt = db.prepare(`
     SELECT id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order
     FROM tasks
-    WHERE scheduled_date = ?
+    WHERE user_id = ? AND scheduled_date = ?
     ORDER BY created_at
   `);
-  return stmt.all(date) as Task[];
+  return stmt.all(userId, date) as Task[];
 }

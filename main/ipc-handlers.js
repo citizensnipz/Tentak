@@ -2,7 +2,7 @@
  * IPC handlers: tentak:query and tentak:mutate. Call backend only; no agent/LLM.
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -36,6 +36,10 @@ import {
   clearOpenAIApiKey,
   loadChatMessages,
   appendChatMessage,
+  getDefaultOrFirstUserId,
+  getUser,
+  updateUser,
+  runSnapshotBackup,
 } from '../backend/dist/backend/index.js';
 import { runClawdbot } from '../agent/runClawdbot.js';
 
@@ -66,7 +70,13 @@ function wrap(handler) {
   };
 }
 
-export function registerIpcHandlers(db) {
+function getActiveUserId(db) {
+  const userId = getDefaultOrFirstUserId(db);
+  if (userId == null) throw new Error('No user found');
+  return userId;
+}
+
+export function registerIpcHandlers(db, userDataPath) {
   ipcMain.handle(
     'tentak:query',
     wrap((payload) => {
@@ -77,24 +87,25 @@ export function registerIpcHandlers(db) {
       if (!QUERY_TYPES.includes(type)) {
         throw new Error(`Unknown query type: ${type}`);
       }
+      const userId = getActiveUserId(db);
       switch (type) {
         case 'scheduleToday': {
           const date = params.date ?? new Date().toISOString().slice(0, 10);
           return getScheduleToday(db, date);
         }
         case 'tasksBacklog':
-          return getTasksBacklog(db);
+          return getTasksBacklog(db, userId);
         case 'tasksScheduled':
-          return getTasksScheduled(db);
+          return getTasksScheduled(db, userId);
         case 'tasksWaiting':
-          return getTasksWaiting(db);
+          return getTasksWaiting(db, userId);
         case 'allTables':
-          return getAllTables(db);
+          return getAllTables(db, userId);
         case 'allTasks':
-          return getAllTasks(db);
+          return getAllTasks(db, userId);
         case 'tasksByScheduledDate': {
           const date = params.date ?? new Date().toISOString().slice(0, 10);
-          return getTasksByScheduledDate(db, date);
+          return getTasksByScheduledDate(db, date, userId);
         }
         default:
           throw new Error(`Unknown query type: ${type}`);
@@ -102,9 +113,11 @@ export function registerIpcHandlers(db) {
     })
   );
 
+  const triggerBackup = (userId) => runSnapshotBackup(db, userDataPath, userId).catch(() => {});
+
   ipcMain.handle(
     'tentak:mutate',
-    wrap((payload) => {
+    wrap(async (payload) => {
       if (!payload || typeof payload.operation !== 'string') {
         throw new Error('Mutate payload must have operation');
       }
@@ -112,18 +125,25 @@ export function registerIpcHandlers(db) {
       if (!MUTATE_OPERATIONS.includes(operation)) {
         throw new Error(`Unknown mutate operation: ${operation}`);
       }
+      const userId = getActiveUserId(db);
+      let result;
       switch (operation) {
         case 'taskCreate':
-          return createTask(db, opPayload);
+          result = createTask(db, userId, opPayload);
+          await triggerBackup(userId);
+          return result;
         case 'taskUpdate': {
           const { id, ...data } = opPayload;
           if (id == null) throw new Error('taskUpdate requires id');
-          return updateTask(db, Number(id), data);
+          result = updateTask(db, userId, Number(id), data);
+          await triggerBackup(userId);
+          return result;
         }
         case 'taskDelete': {
           const id = opPayload.id;
           if (id == null) throw new Error('taskDelete requires id');
-          deleteTask(db, Number(id));
+          deleteTask(db, userId, Number(id));
+          await triggerBackup(userId);
           return null;
         }
         case 'eventCreate':
@@ -153,16 +173,21 @@ export function registerIpcHandlers(db) {
           return null;
         }
         case 'tableCreate':
-          return createTable(db, opPayload);
+          result = createTable(db, userId, opPayload);
+          await triggerBackup(userId);
+          return result;
         case 'tableUpdate': {
           const { id, ...data } = opPayload;
           if (id == null) throw new Error('tableUpdate requires id');
-          return updateTable(db, String(id), data);
+          result = updateTable(db, userId, String(id), data);
+          await triggerBackup(userId);
+          return result;
         }
         case 'tableDelete': {
           const { id, moveTasksToBacklog, deleteTasks } = opPayload;
           if (id == null) throw new Error('tableDelete requires id');
-          deleteTable(db, String(id), { moveTasksToBacklog, deleteTasks });
+          deleteTable(db, userId, String(id), { moveTasksToBacklog, deleteTasks });
+          await triggerBackup(userId);
           return null;
         }
         default:
@@ -179,8 +204,9 @@ export function registerIpcHandlers(db) {
         throw new Error('agent:ask requires a non-empty message string');
       }
 
-      // Build a sanitized, JSON-only snapshot of the current state for the agent.
-      const context = buildAgentContext(db);
+      const userId = getDefaultOrFirstUserId(db);
+      if (userId == null) throw new Error('No user found');
+      const context = buildAgentContext(db, userId);
 
       // Check if OpenAI API key is configured
       const apiKey = getOpenAIApiKey();
@@ -210,22 +236,62 @@ export function registerIpcHandlers(db) {
 
   // Chat: persisted messages, load and append (trimming handled in backend).
   ipcMain.handle('tentak:chat:loadMessages', wrap((payload) => {
+    const userId = getActiveUserId(db);
     const chatId = payload?.chatId ?? 'default';
-    return loadChatMessages(db, String(chatId));
+    return loadChatMessages(db, userId, String(chatId));
   }));
 
-  ipcMain.handle('tentak:chat:appendMessage', wrap((payload) => {
+  ipcMain.handle('tentak:chat:appendMessage', wrap(async (payload) => {
+    const userId = getActiveUserId(db);
     const chatId = payload?.chatId ?? 'default';
     const message = payload?.message;
     if (!message || typeof message.role !== 'string' || typeof message.content !== 'string') {
       throw new Error('appendMessage requires message with role and content');
     }
-    return appendChatMessage(db, String(chatId), {
+    const result = appendChatMessage(db, userId, String(chatId), {
       role: message.role,
       content: message.content,
       timestamp: typeof message.timestamp === 'number' ? message.timestamp : Date.now(),
       usedLLM: Boolean(message.usedLLM),
     });
+    await triggerBackup(userId);
+    return result;
+  }));
+
+  // Profile: get current user, update profile.
+  ipcMain.handle('tentak:profile:get', wrap(() => {
+    const userId = getActiveUserId(db);
+    const user = getUser(db, userId);
+    return user ?? null;
+  }));
+
+  ipcMain.handle('tentak:profile:update', wrap((payload) => {
+    const userId = getActiveUserId(db);
+    const { username, email, avatar_path } = payload ?? {};
+    return updateUser(db, userId, { username, email, avatar_path });
+  }));
+
+  // Manual backup.
+  ipcMain.handle('tentak:backup:now', wrap(async () => {
+    const userId = getActiveUserId(db);
+    await runSnapshotBackup(db, userDataPath, userId);
+    return getUser(db, userId);
+  }));
+
+  // Avatar: open file dialog and return selected path; get file URL for preview.
+  ipcMain.handle('tentak:profile:chooseAvatar', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+    });
+    if (result.canceled || !result.filePaths?.length) return { ok: true, data: null };
+    return { ok: true, data: result.filePaths[0] };
+  });
+
+  ipcMain.handle('tentak:profile:getAvatarUrl', wrap((payload) => {
+    const path = payload?.path;
+    if (typeof path !== 'string' || !path) return null;
+    return pathToFileURL(path).href;
   }));
 
   // Secure settings: OpenAI API key management.

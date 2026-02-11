@@ -51,6 +51,7 @@ export function WorldStage({
   const [draggingTableId, setDraggingTableId] = useState(null);
   const [dateChangePending, setDateChangePending] = useState(null);
   const [dontRemindChecked, setDontRemindChecked] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
 
   const handleTableHeaderPointerDown = useCallback(
     (tableId) => (event) => {
@@ -249,6 +250,14 @@ export function WorldStage({
       const scale = computeScale(event.currentTarget) || info.scale || 1;
       const dx = (event.clientX - info.pointerStart.x) / scale;
       const dy = (event.clientY - info.pointerStart.y) / scale;
+
+      const moveThreshold = 5;
+      if (Math.abs(dx) < moveThreshold && Math.abs(dy) < moveThreshold) {
+        dragInfoRef.current = null;
+        setDraggingId(null);
+        return;
+      }
+
       const finalPos = { x: info.cardStart.x + dx, y: info.cardStart.y + dy };
 
       const task = tasks.find((t) => t.id === taskId);
@@ -559,6 +568,10 @@ export function WorldStage({
             task={task}
             position={position}
             isDragging={draggingId === task.id}
+            isExpanded={expandedTaskId === task.id}
+            onToggleExpand={() =>
+              setExpandedTaskId((id) => (id === task.id ? null : task.id))
+            }
             onPointerDown={handlePointerDown(task.id)}
             onPointerMove={handlePointerMove(task.id)}
             onPointerUp={handlePointerUp(task.id)}

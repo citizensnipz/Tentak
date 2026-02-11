@@ -37,6 +37,31 @@ contextBridge.exposeInMainWorld('tentak', {
   },
 
   /**
+   * Profile: get current user, update profile (username, email, avatar_path).
+   */
+  profile: {
+    get() {
+      return ipcRenderer.invoke('tentak:profile:get');
+    },
+    update(payload) {
+      return ipcRenderer.invoke('tentak:profile:update', payload);
+    },
+    chooseAvatar() {
+      return ipcRenderer.invoke('tentak:profile:chooseAvatar');
+    },
+    getAvatarUrl(path) {
+      return ipcRenderer.invoke('tentak:profile:getAvatarUrl', { path });
+    },
+  },
+
+  /**
+   * Manual backup: run snapshot backup and return updated user (with last_backup_at).
+   */
+  backupNow() {
+    return ipcRenderer.invoke('tentak:backup:now');
+  },
+
+  /**
    * Settings: OpenAI API key management.
    * SECURITY: Key is stored securely in main process, never exposed to renderer.
    */

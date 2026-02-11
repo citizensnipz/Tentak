@@ -3,7 +3,7 @@
  * Use from renderer: window.tentak.query(...), window.tentak.mutate(...).
  */
 
-import type { Event, Task } from './types.js';
+import type { Event, Task, User } from './types.js';
 
 export type QueryType = 'scheduleToday' | 'tasksBacklog' | 'tasksScheduled' | 'tasksWaiting' | 'allTables' | 'allTasks' | 'tasksByScheduledDate';
 
@@ -53,6 +53,10 @@ export interface ChatMessageAPI {
   usedLLM: boolean;
 }
 
+export type ProfileGetResult = { ok: true; data: User | null } | { ok: false; error: string };
+export type ProfileUpdateResult = { ok: true; data: User } | { ok: false; error: string };
+export type BackupNowResult = { ok: true; data: User } | { ok: false; error: string };
+
 export interface TentakAPI {
   query(payload: QueryPayload): Promise<QueryResult>;
   mutate(payload: MutatePayload): Promise<MutateResult>;
@@ -60,6 +64,13 @@ export interface TentakAPI {
   getAssetPath(name: string): Promise<{ ok: true; data: string } | { ok: false; error: string }>;
   loadChatMessages(chatId?: string): Promise<{ ok: true; data: ChatMessageAPI[] } | { ok: false; error: string }>;
   appendChatMessage(chatId: string, message: { role: string; content: string; timestamp?: number; usedLLM?: boolean }): Promise<{ ok: true; data: ChatMessageAPI } | { ok: false; error: string }>;
+  profile: {
+    get(): Promise<ProfileGetResult>;
+    update(payload: { username?: string; email?: string; avatar_path?: string | null }): Promise<ProfileUpdateResult>;
+    chooseAvatar(): Promise<{ ok: true; data: string | null } | { ok: false; error: string }>;
+    getAvatarUrl(path: string): Promise<{ ok: true; data: string | null } | { ok: false; error: string }>;
+  };
+  backupNow(): Promise<BackupNowResult>;
 }
 
 declare global {

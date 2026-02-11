@@ -4,6 +4,7 @@ import { TABLE_ID_TO_KIND } from '@/lib/board-utils';
 export function useTaskActions({
   view,
   dayDate,
+  tasks,
   setLoading,
   setError,
   setTasks,
@@ -68,6 +69,13 @@ export function useTaskActions({
       if (typeof window.tentak === 'undefined') {
         return Promise.reject(new Error('window.tentak not available'));
       }
+      const backlogTasks = (tasks || []).filter(
+        (t) => t.table_id === 'backlog' && t.table_order != null
+      );
+      const nextOrder =
+        backlogTasks.length === 0
+          ? 0
+          : Math.max(...backlogTasks.map((t) => t.table_order ?? 0)) + 1;
       return window.tentak
         .mutate({
           operation: 'taskCreate',
@@ -79,6 +87,8 @@ export function useTaskActions({
             status: 'pending',
             kind: 'backlog',
             priority: 'normal',
+            table_id: 'backlog',
+            table_order: nextOrder,
           },
         })
         .then((r) => {
@@ -90,7 +100,7 @@ export function useTaskActions({
           }
         });
     },
-    [dayDate, setDayTasks, setTasks, view],
+    [dayDate, setDayTasks, setTasks, tasks, view],
   );
 
   const deleteTask = useCallback(

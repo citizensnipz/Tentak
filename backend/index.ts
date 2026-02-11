@@ -47,3 +47,12 @@ export {
   type ChatMessage,
   type ChatMessageInsert,
 } from './chatMessages.js';
+export {
+  getDefaultOrFirstUserId,
+  createDefaultUser,
+  getUser,
+  updateUser,
+  setUserLastBackupAt,
+  type UserUpdate,
+} from './users.js';
+export { runSnapshotBackup } from './backup.js';

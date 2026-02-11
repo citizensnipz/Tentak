@@ -2,7 +2,7 @@
  * Electron main process: open DB, register IPC, create window. No UI logic.
  */
 
-import { app, BrowserWindow, nativeImage } from 'electron';
+import { app, BrowserWindow, nativeImage, Menu } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { openDb } from '../backend/dist/backend/index.js';
@@ -36,10 +36,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  const dbPath = join(app.getPath('userData'), 'tentak.db');
+  const userDataPath = app.getPath('userData');
+  const dbPath = join(userDataPath, 'tentak.db');
   db = openDb(dbPath);
-  registerIpcHandlers(db);
+  registerIpcHandlers(db, userDataPath);
   createWindow();
+  // Remove native menu bar on Windows/Linux; keep default on macOS
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+  }
 });
 
 app.on('window-all-closed', () => {

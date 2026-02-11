@@ -15,6 +15,7 @@ import { CreateTableModal } from './components/modals/CreateTableModal';
 import { BoardView } from './views/BoardView';
 import { DayView } from './views/DayView';
 import { ChatView } from './views/ChatView';
+import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
 import { useTaskActions } from './hooks/useTaskActions';
 import { useTableActions } from './hooks/useTableActions';
@@ -68,6 +69,7 @@ function App() {
   } = useTaskActions({
     view,
     dayDate,
+    tasks,
     setLoading,
     setError,
     setTasks,
@@ -147,6 +149,7 @@ function App() {
           />
         )}
         {view === 'chat' && <ChatView />}
+        {view === 'profile' && <ProfileView />}
         {view === 'settings' && (
           <SettingsView
             boardBackgroundColor={boardBackgroundColor}

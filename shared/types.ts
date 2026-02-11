@@ -3,6 +3,16 @@
  * Matches backend/schema.sql exactly.
  */
 
+export interface User {
+  id: number;
+  username: string;
+  email: string | null;
+  avatar_path: string | null;
+  created_at: string;
+  updated_at: string;
+  last_backup_at: string | null;
+}
+
 export type TaskStatus = 'pending' | 'waiting' | 'completed' | 'cancelled';
 export type TaskKind = 'scheduled' | 'backlog' | 'external_dependency' | 'someday';
 export type TaskPriority = 'low' | 'normal' | 'high';

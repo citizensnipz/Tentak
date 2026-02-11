@@ -2,9 +2,21 @@
 -- Source of truth for tasks, events, reminders.
 -- Enums enforced via CHECK constraints.
 
+-- Users: one row per profile. All tasks/tables/chat belong to a user.
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL,
+  email TEXT,
+  avatar_path TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_backup_at TEXT
+);
+
 -- Task: something the user wants done. May or may not have dates.
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
   title TEXT NOT NULL,
   description TEXT,
   status TEXT NOT NULL CHECK (status IN ('pending', 'waiting', 'completed', 'cancelled')),
@@ -53,6 +65,7 @@ CREATE TABLE IF NOT EXISTS notes (
 -- Table: grouping area on the board for organizing tasks.
 CREATE TABLE IF NOT EXISTS tables (
   id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
   title TEXT NOT NULL,
   color TEXT,
   x REAL NOT NULL,
@@ -67,6 +80,7 @@ CREATE TABLE IF NOT EXISTS tables (
 -- Chat messages: persisted per chatId, capped per thread.
 CREATE TABLE IF NOT EXISTS chat_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
   chat_id TEXT NOT NULL DEFAULT 'default',
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,

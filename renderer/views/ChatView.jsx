@@ -2,13 +2,17 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { Send, Sparkles } from 'lucide-react';
+import { Send, Sparkles, User } from 'lucide-react';
 import { routeChatMessage } from '@/utils/chatRouter';
+
+const AVATAR_SIZE = 'h-8 w-8';
 
 export function ChatView() {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [logoUrl, setLogoUrl] = useState(null);
+  const [userAvatarUrl, setUserAvatarUrl] = useState(null);
   const [chatContext, setChatContext] = useState({
     today: [],
     backlog: [],
@@ -36,6 +40,28 @@ export function ChatView() {
         if (res?.ok && Array.isArray(res.data)) setMessages(res.data);
       })
       .catch(() => {});
+  }, []);
+
+  // Tentak logo for assistant messages
+  useEffect(() => {
+    if (typeof window?.tentak?.getAssetPath !== 'function') return;
+    window.tentak.getAssetPath('logo.png').then((res) => {
+      if (res?.ok && res.data) setLogoUrl(res.data);
+    });
+  }, []);
+
+  // User avatar for user messages
+  useEffect(() => {
+    if (typeof window?.tentak?.profile?.get !== 'function') return;
+    window.tentak.profile.get().then((res) => {
+      if (!res?.ok || !res.data?.avatar_path) {
+        setUserAvatarUrl(null);
+        return;
+      }
+      window.tentak.profile.getAvatarUrl(res.data.avatar_path).then((urlRes) => {
+        setUserAvatarUrl(urlRes?.ok && urlRes.data ? urlRes.data : null);
+      });
+    });
   }, []);
 
   const persistMessage = useCallback((msg) => {
@@ -244,18 +270,13 @@ export function ChatView() {
             No messages yet. Start a conversation...
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn(
-                'flex',
-                msg.role === 'user' ? 'justify-end' : 'justify-start'
-              )}
-            >
+          messages.map((msg) => {
+            const isUser = msg.role === 'user';
+            const bubble = (
               <div
                 className={cn(
                   'max-w-[80%] rounded-lg px-4 py-2 text-sm',
-                  msg.role === 'user'
+                  isUser
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-muted text-muted-foreground'
                 )}
@@ -264,7 +285,7 @@ export function ChatView() {
                 <div
                   className={cn(
                     'text-xs mt-1 flex items-center gap-1.5',
-                    msg.role === 'user'
+                    isUser
                       ? 'text-primary-foreground/70'
                       : 'text-muted-foreground/70'
                   )}
@@ -285,8 +306,62 @@ export function ChatView() {
                   )}
                 </div>
               </div>
-            </div>
-          ))
+            );
+
+            const avatar = (
+              <div
+                className={cn(
+                  'shrink-0 rounded-full overflow-hidden bg-muted flex items-center justify-center',
+                  AVATAR_SIZE
+                )}
+                aria-hidden
+              >
+                {isUser ? (
+                  userAvatarUrl ? (
+                    <img
+                      src={userAvatarUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <User className="h-4 w-4 text-muted-foreground" />
+                  )
+                ) : logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt=""
+                    className="h-full w-full object-contain p-1"
+                  />
+                ) : (
+                  <div className="h-4 w-4 rounded-full bg-primary/20 flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-primary">T</span>
+                  </div>
+                )}
+              </div>
+            );
+
+            return (
+              <div
+                key={msg.id}
+                className={cn(
+                  'flex items-end gap-2',
+                  isUser ? 'justify-end' : 'justify-start'
+                )}
+              >
+                {isUser ? (
+                  <>
+                    {bubble}
+                    {avatar}
+                  </>
+                ) : (
+                  <>
+                    {avatar}
+                    {bubble}
+                  </>
+                )}
+              </div>
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>

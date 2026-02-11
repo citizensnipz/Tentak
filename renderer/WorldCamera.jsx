@@ -78,7 +78,7 @@ const WorldCamera = forwardRef(function WorldCamera({ children, backgroundColor 
     <div className="w-full h-full overflow-hidden relative">
       <TransformWrapper
         ref={transformRef}
-        minScale={0.5}
+        minScale={0.25}
         maxScale={3}
         panning={{
           allowLeftClickPan: true,

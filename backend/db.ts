@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { createDefaultUser, getDefaultOrFirstUserId } from './users.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // When compiled to backend/dist/backend/, schema lives at backend/schema.sql
@@ -29,7 +30,8 @@ export function openDb(dbPath: string): Db {
   if (!tableExists) {
     const schema = readFileSync(SCHEMA_PATH, 'utf-8');
     db.exec(schema);
-    initializePermanentTables(db);
+    const defaultUserId = createDefaultUser(db);
+    initializePermanentTables(db, defaultUserId);
   } else {
     try {
       db.exec('ALTER TABLE tasks ADD COLUMN color TEXT');
@@ -66,7 +68,6 @@ export function openDb(dbPath: string): Db {
           locked INTEGER NOT NULL DEFAULT 0
         )
       `);
-      initializePermanentTables(db);
     } catch {
       /* table already exists */
     }
@@ -81,9 +82,53 @@ export function openDb(dbPath: string): Db {
       /* column already exists */
     }
     ensureChatMessagesTable(db);
+    runUserMigration(db);
+    const defaultUserId = getDefaultOrFirstUserId(db);
+    if (defaultUserId != null) initializePermanentTables(db, defaultUserId);
   }
 
   return db;
+}
+
+/**
+ * Migration: create users table if missing, create default user if none,
+ * add user_id to tasks, tables, chat_messages and backfill with default user id.
+ */
+function runUserMigration(db: Db): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      email TEXT,
+      avatar_path TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_backup_at TEXT
+    )
+  `);
+
+  const firstUserId = getDefaultOrFirstUserId(db);
+  const defaultUserId = firstUserId ?? createDefaultUser(db);
+
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN user_id INTEGER NOT NULL DEFAULT ' + defaultUserId);
+  } catch {
+    /* column already exists */
+  }
+  try {
+    db.exec('ALTER TABLE tables ADD COLUMN user_id INTEGER NOT NULL DEFAULT ' + defaultUserId);
+  } catch {
+    /* column already exists */
+  }
+  try {
+    db.exec('ALTER TABLE chat_messages ADD COLUMN user_id INTEGER NOT NULL DEFAULT ' + defaultUserId);
+  } catch {
+    /* column already exists */
+  }
+
+  db.prepare('UPDATE tasks SET user_id = ? WHERE user_id IS NULL OR user_id = 0').run(defaultUserId);
+  db.prepare('UPDATE tables SET user_id = ? WHERE user_id IS NULL OR user_id = 0').run(defaultUserId);
+  db.prepare('UPDATE chat_messages SET user_id = ? WHERE user_id IS NULL OR user_id = 0').run(defaultUserId);
 }
 
 function ensureChatMessagesTable(db: Db): void {
@@ -102,19 +147,19 @@ function ensureChatMessagesTable(db: Db): void {
   );
 }
 
-function initializePermanentTables(db: Db): void {
+function initializePermanentTables(db: Db, userId: number): void {
   const backlogExists = db.prepare('SELECT id FROM tables WHERE id = ?').get('backlog');
   if (!backlogExists) {
     db.prepare(`
-      INSERT INTO tables (id, title, color, x, y, width, height, is_permanent)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run('backlog', 'Backlog', null, 150, 150, 600, 400, 1);
+      INSERT INTO tables (id, user_id, title, color, x, y, width, height, is_permanent)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('backlog', userId, 'Backlog', null, 150, 150, 600, 400, 1);
   }
   const todayExists = db.prepare('SELECT id FROM tables WHERE id = ?').get('today');
   if (!todayExists) {
     db.prepare(`
-      INSERT INTO tables (id, title, color, x, y, width, height, is_permanent)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run('today', 'Today', null, 850, 150, 600, 400, 1);
+      INSERT INTO tables (id, user_id, title, color, x, y, width, height, is_permanent)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('today', userId, 'Today', null, 850, 150, 600, 400, 1);
   }
 }

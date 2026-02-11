@@ -1,10 +1,12 @@
 export const DEFAULT_TASK_COLOR = '#e0e0e0';
 export const CARD_WIDTH = 220;
 export const CARD_HEIGHT = 110;
-export const CARD_GAP = 40;
+export const CARD_GAP = 4;
 export const TABLE_HEADER_HEIGHT = 36;
 export const TABLE_CARD_INSET = 16;
 export const CARD_HEADER_HEIGHT = 36;
+/** Height of one slot in table layout (collapsed header + gap). Expanded cards overlap below. */
+export const COLLAPSED_SLOT_HEIGHT = CARD_HEADER_HEIGHT + CARD_GAP;
 export const DEFAULT_TABLE_COLOR = '#c4c4c4';
 export const BOARD_BG_COLOR_STORAGE_KEY = 'tentak.boardBackgroundColor';
 export const DEFAULT_BOARD_BACKGROUND_COLOR = '#f4f4f5';
@@ -52,21 +54,12 @@ export function getTextColorForBackground(hex) {
 }
 
 export function computeInitialPositionInTable(indexInTable, table) {
-  // Use the same column-based layout algorithm for consistency
-  // Calculate available vertical space in table content area
   const tableContentHeight = table.height - TABLE_HEADER_HEIGHT - (2 * TABLE_CARD_INSET);
-  
-  // Calculate how many cards fit in one column
-  const maxCardsPerColumn = Math.max(1, Math.floor(tableContentHeight / (CARD_HEIGHT + CARD_GAP)));
-  
-  // Calculate column and row indices
+  const maxCardsPerColumn = Math.max(1, Math.floor(tableContentHeight / COLLAPSED_SLOT_HEIGHT));
   const columnIndex = Math.floor(indexInTable / maxCardsPerColumn);
   const rowIndex = indexInTable % maxCardsPerColumn;
-  
-  // Calculate position
   const x = table.x + TABLE_CARD_INSET + columnIndex * (CARD_WIDTH + CARD_GAP);
-  const y = table.y + TABLE_HEADER_HEIGHT + TABLE_CARD_INSET + rowIndex * (CARD_HEIGHT + CARD_GAP);
-  
+  const y = table.y + TABLE_HEADER_HEIGHT + TABLE_CARD_INSET + rowIndex * COLLAPSED_SLOT_HEIGHT;
   return { x, y };
 }
 
@@ -79,20 +72,12 @@ export function computeInitialPositionInTable(indexInTable, table) {
  * @returns {{x: number, y: number}} The snapped position
  */
 export function computeSnappedPositionInTable(layoutIndex, table) {
-  // Calculate available vertical space in table content area
   const tableContentHeight = table.height - TABLE_HEADER_HEIGHT - (2 * TABLE_CARD_INSET);
-  
-  // Calculate how many cards fit in one column
-  const maxCardsPerColumn = Math.max(1, Math.floor(tableContentHeight / (CARD_HEIGHT + CARD_GAP)));
-  
-  // Calculate column and row indices
+  const maxCardsPerColumn = Math.max(1, Math.floor(tableContentHeight / COLLAPSED_SLOT_HEIGHT));
   const columnIndex = Math.floor(layoutIndex / maxCardsPerColumn);
   const rowIndex = layoutIndex % maxCardsPerColumn;
-  
-  // Calculate position
   const x = table.x + TABLE_CARD_INSET + columnIndex * (CARD_WIDTH + CARD_GAP);
-  const y = table.y + TABLE_HEADER_HEIGHT + TABLE_CARD_INSET + rowIndex * (CARD_HEIGHT + CARD_GAP);
-  
+  const y = table.y + TABLE_HEADER_HEIGHT + TABLE_CARD_INSET + rowIndex * COLLAPSED_SLOT_HEIGHT;
   return { x, y };
 }
 
@@ -107,27 +92,26 @@ export function computeSnappedPositionInTable(layoutIndex, table) {
  * @returns {number} The layout index for the new position
  */
 export function computeLayoutIndexForDrop(dropX, dropY, table, existingTasksInTable) {
-  // Calculate available vertical space dynamically
   const tableContentHeight = table.height - TABLE_HEADER_HEIGHT - (2 * TABLE_CARD_INSET);
-  const maxCardsPerColumn = Math.max(1, Math.floor(tableContentHeight / (CARD_HEIGHT + CARD_GAP)));
+  const maxCardsPerColumn = Math.max(1, Math.floor(tableContentHeight / COLLAPSED_SLOT_HEIGHT));
   
-  // Calculate table content area bounds
-  const tableContentTop = table.y + TABLE_HEADER_HEIGHT;
+  // Calculate table content area bounds (must match computeSnappedPositionInTable)
+  const tableContentTop = table.y + TABLE_HEADER_HEIGHT + TABLE_CARD_INSET;
   const tableContentLeft = table.x + TABLE_CARD_INSET;
   
-  // Calculate relative positions within table content area
-  const relativeX = dropX - tableContentLeft;
-  const relativeY = dropY - tableContentTop;
+  // Use card center for slot calculation so reordering works when card is expanded
+  const centerX = dropX + CARD_WIDTH / 2;
+  const centerY = dropY + CARD_HEADER_HEIGHT / 2;
+  const relativeX = centerX - tableContentLeft;
+  const relativeY = centerY - tableContentTop;
   
   // Sort existing tasks by their layout index to understand current layout
   const sortedTasks = [...existingTasksInTable]
     .filter(t => t.table_order !== null && t.table_order !== undefined)
     .sort((a, b) => (a.table_order ?? 0) - (b.table_order ?? 0));
   
-  // If no existing tasks, calculate index from drop position
   if (sortedTasks.length === 0) {
-    // Determine row from Y position (prioritize Y)
-    const rowIndex = Math.max(0, Math.floor(relativeY / (CARD_HEIGHT + CARD_GAP)));
+    const rowIndex = Math.max(0, Math.floor(relativeY / COLLAPSED_SLOT_HEIGHT));
     const clampedRowIndex = Math.min(rowIndex, maxCardsPerColumn - 1);
     
     // Determine column from X position
@@ -140,8 +124,7 @@ export function computeLayoutIndexForDrop(dropX, dropY, table, existingTasksInTa
   // Find the maximum layout index
   const maxOrder = Math.max(...sortedTasks.map(t => t.table_order ?? 0));
   
-  // Determine target row and column from drop position
-  const targetRowIndex = Math.max(0, Math.floor(relativeY / (CARD_HEIGHT + CARD_GAP)));
+  const targetRowIndex = Math.max(0, Math.floor(relativeY / COLLAPSED_SLOT_HEIGHT));
   const clampedTargetRowIndex = Math.min(targetRowIndex, maxCardsPerColumn - 1);
   const targetColumnIndex = Math.max(0, Math.floor(relativeX / (CARD_WIDTH + CARD_GAP)));
   
@@ -226,6 +209,19 @@ export function getTableDisplayTitle(table, todayStr) {
 
 export function pointInTable(px, py, table) {
   return px >= table.x && px <= table.x + table.width && py >= table.y && py <= table.y + table.height;
+}
+
+/**
+ * Returns the minimum width needed for a table to hold taskCount tasks.
+ * @param {number} taskCount - Number of tasks
+ * @param {object} table - Table with height property
+ */
+export function minTableWidthForTasks(taskCount, table) {
+  if (taskCount <= 0) return 2 * TABLE_CARD_INSET + CARD_WIDTH;
+  const tableContentHeight = table.height - TABLE_HEADER_HEIGHT - (2 * TABLE_CARD_INSET);
+  const maxCardsPerColumn = Math.max(1, Math.floor(tableContentHeight / COLLAPSED_SLOT_HEIGHT));
+  const numColumns = Math.ceil(taskCount / maxCardsPerColumn);
+  return 2 * TABLE_CARD_INSET + numColumns * (CARD_WIDTH + CARD_GAP) - CARD_GAP;
 }
 
 export function getTaskTableId(task) {

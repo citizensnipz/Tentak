@@ -40,17 +40,17 @@ export interface AgentContext {
   };
 }
 
-export function buildAgentContext(db: Db): AgentContext {
+export function buildAgentContext(db: Db, userId: number): AgentContext {
   const todayDate = new Date().toISOString().slice(0, 10);
 
   const scheduleToday = getScheduleToday(db, todayDate);
-  const todayTasks = getTasksByScheduledDate(db, todayDate);
+  const todayTasks = getTasksByScheduledDate(db, todayDate, userId);
 
-  const backlog = getTasksBacklog(db);
-  const scheduled = getTasksScheduled(db);
-  const waiting = getTasksWaiting(db);
-  const tables = getAllTables(db);
-  const allTasks = getAllTasks(db);
+  const backlog = getTasksBacklog(db, userId);
+  const scheduled = getTasksScheduled(db, userId);
+  const waiting = getTasksWaiting(db, userId);
+  const tables = getAllTables(db, userId);
+  const allTasks = getAllTasks(db, userId);
 
   const upcomingTasks = allTasks.filter((task) => {
     const d = (task.scheduled_date ?? '') as string;

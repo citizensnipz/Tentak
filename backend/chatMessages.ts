@@ -42,18 +42,18 @@ function rowToMessage(row: ChatMessageRow): ChatMessage {
 }
 
 /**
- * Load all messages for a chat, ordered by timestamp ascending.
+ * Load all messages for a chat and user, ordered by timestamp ascending.
  */
-export function loadChatMessages(db: Db, chatId: string): ChatMessage[] {
+export function loadChatMessages(db: Db, userId: number, chatId: string): ChatMessage[] {
   const chat_id = chatId || 'default';
   const rows = db
     .prepare(
       `SELECT id, chat_id, role, content, timestamp, used_llm
        FROM chat_messages
-       WHERE chat_id = ?
+       WHERE user_id = ? AND chat_id = ?
        ORDER BY timestamp ASC`
     )
-    .all(chat_id) as ChatMessageRow[];
+    .all(userId, chat_id) as ChatMessageRow[];
   return rows.map(rowToMessage);
 }
 
@@ -63,6 +63,7 @@ export function loadChatMessages(db: Db, chatId: string): ChatMessage[] {
  */
 export function appendChatMessage(
   db: Db,
+  userId: number,
   chatId: string,
   message: ChatMessageInsert
 ): ChatMessage {
@@ -73,18 +74,18 @@ export function appendChatMessage(
   const used_llm = message.usedLLM === true ? 1 : 0;
 
   const insert = db.prepare(`
-    INSERT INTO chat_messages (chat_id, role, content, timestamp, used_llm)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO chat_messages (user_id, chat_id, role, content, timestamp, used_llm)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
-  const result = insert.run(chat_id, role, content, String(timestamp), used_llm);
+  const result = insert.run(userId, chat_id, role, content, String(timestamp), used_llm);
   const lastId = Number(result.lastInsertRowid);
 
-  const count = db.prepare('SELECT COUNT(*) as n FROM chat_messages WHERE chat_id = ?').get(chat_id) as { n: number };
+  const count = db.prepare('SELECT COUNT(*) as n FROM chat_messages WHERE user_id = ? AND chat_id = ?').get(userId, chat_id) as { n: number };
   if (count.n > MAX_CHAT_MESSAGES) {
     const toDelete = count.n - MAX_CHAT_MESSAGES;
     const oldest = db.prepare(
-      `SELECT id FROM chat_messages WHERE chat_id = ? ORDER BY timestamp ASC LIMIT ?`
-    ).all(chat_id, toDelete) as { id: number }[];
+      `SELECT id FROM chat_messages WHERE user_id = ? AND chat_id = ? ORDER BY timestamp ASC LIMIT ?`
+    ).all(userId, chat_id, toDelete) as { id: number }[];
     if (oldest.length > 0) {
       const placeholders = oldest.map(() => '?').join(',');
       db.prepare(`DELETE FROM chat_messages WHERE id IN (${placeholders})`).run(...oldest.map((r) => r.id));

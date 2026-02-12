@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Calendar, LayoutDashboard, MessageCircle, Settings as SettingsIcon, Menu, User, LogOut } from 'lucide-react';
+import { Calendar, LayoutDashboard, MessageCircle, Settings as SettingsIcon, Menu, User, LogOut, Palette } from 'lucide-react';
 import { useAuth } from '@/auth/AuthContext';
 
 export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange, onLogout }) {
@@ -37,6 +37,7 @@ export function NavigationDrawer({ isOpen, onToggle, currentView, onViewChange, 
     { id: 'board', label: 'Board', icon: LayoutDashboard },
     { id: 'day', label: 'Day', icon: Calendar },
     { id: 'chat', label: 'Chat', icon: MessageCircle },
+    { id: 'personalization', label: 'Personalization', icon: Palette },
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];

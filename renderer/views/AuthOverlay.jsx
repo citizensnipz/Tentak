@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User as UserIcon } from 'lucide-react';
+import { User as UserIcon, X } from 'lucide-react';
 import { useAuth } from '@/auth/AuthContext';
 import { cn } from '@/lib/utils';
 
@@ -23,12 +23,15 @@ function PasswordField({ id, label, value, onChange }) {
 }
 
 export function AuthOverlay() {
-  const { isAuthenticated, setCurrentUser } = useAuth();
-  const [users, setUsers] = useState([]);
+  const { isAuthenticated, setCurrentUser, sessionChecked } = useAuth();
+  const [profiles, setProfiles] = useState([]);
   const [avatars, setAvatars] = useState({});
-  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [mode, setMode] = useState('login');
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [password, setPassword] = useState('');
+  const [showOtherAccount, setShowOtherAccount] = useState(false);
+  const [otherUsername, setOtherUsername] = useState('');
+  const [otherPassword, setOtherPassword] = useState('');
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
@@ -37,29 +40,23 @@ export function AuthOverlay() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const loadUsers = useCallback(async () => {
-    if (typeof window === 'undefined' || !window.tentak?.auth?.listUsers) return;
+  const loadRememberedProfiles = useCallback(async () => {
+    if (typeof window === 'undefined' || !window.tentak?.auth?.getRememberedProfiles) return;
     try {
-      const res = await window.tentak.auth.listUsers();
+      const res = await window.tentak.auth.getRememberedProfiles();
       if (res?.ok && Array.isArray(res.data)) {
-        setUsers(res.data);
-        if (res.data.length === 0) {
-          setMode('signup');
-        } else {
-          setMode('login');
-        }
+        setProfiles(res.data);
+        if (res.data.length === 0) setMode('signup');
 
         const avatarEntries = {};
         await Promise.all(
-          res.data.map(async (u) => {
-            if (u.avatar_path && window.tentak?.profile?.getAvatarUrl) {
+          res.data.map(async (p) => {
+            if (p.avatarPath && window.tentak?.profile?.getAvatarUrl) {
               try {
-                const urlRes = await window.tentak.profile.getAvatarUrl(u.avatar_path);
-                if (urlRes?.ok && urlRes.data) {
-                  avatarEntries[u.id] = urlRes.data;
-                }
+                const urlRes = await window.tentak.profile.getAvatarUrl(p.avatarPath);
+                if (urlRes?.ok && urlRes.data) avatarEntries[p.userId] = urlRes.data;
               } catch {
-                // ignore avatar errors
+                // ignore
               }
             }
           })
@@ -67,21 +64,19 @@ export function AuthOverlay() {
         setAvatars(avatarEntries);
       }
     } catch {
-      // ignore load errors; overlay will still show signup if no users
+      // ignore
     }
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      void loadUsers();
-    }
-  }, [isAuthenticated, loadUsers]);
+    if (!isAuthenticated) void loadRememberedProfiles();
+  }, [isAuthenticated, loadRememberedProfiles]);
 
-  if (isAuthenticated) return null;
+  if (!sessionChecked || isAuthenticated) return null;
 
   const handleLogin = async () => {
     if (!selectedUserId) {
-      setError('Select a user');
+      setError('Select a profile');
       return;
     }
     if (!password) {
@@ -103,6 +98,51 @@ export function AuthOverlay() {
       setError(String(e));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleLoginByUsername = async () => {
+    if (!otherUsername.trim() || !otherPassword) {
+      setError('Enter username and password');
+      return;
+    }
+    if (!window.tentak?.auth?.loginByUsername) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const res = await window.tentak.auth.loginByUsername({
+        username: otherUsername.trim(),
+        password: otherPassword,
+      });
+      if (res?.ok && res.data) {
+        setCurrentUser(res.data);
+        setOtherUsername('');
+        setOtherPassword('');
+        setShowOtherAccount(false);
+      } else {
+        setError(res?.error || 'Login failed');
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemoveProfile = async (userId, e) => {
+    e.stopPropagation();
+    if (!window.confirm('Remove this profile from the login screen? You can log in again with username and password.')) return;
+    if (!window.tentak?.auth?.removeRememberedProfile) return;
+    try {
+      const res = await window.tentak.auth.removeRememberedProfile({ userId });
+      if (res?.ok && res.data?.wasCurrentUser) setCurrentUser(null);
+      await loadRememberedProfiles();
+      if (selectedUserId === userId) {
+        setSelectedUserId(null);
+        setPassword('');
+      }
+    } catch {
+      // ignore
     }
   };
 
@@ -175,73 +215,143 @@ export function AuthOverlay() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label className="text-sm font-medium">Choose a profile</Label>
-              {users.length === 0 ? (
+              {profiles.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No profiles yet. Create a new account.
+                  No profiles yet. Create a new account or log in with username below.
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {users.map((u) => {
-                    const isSelected = selectedUserId === u.id;
-                    const avatarUrl = avatars[u.id];
+                  {profiles.map((p) => {
+                    const isSelected = selectedUserId === p.userId;
+                    const avatarUrl = avatars[p.userId];
                     return (
-                      <button
-                        key={u.id}
-                        type="button"
+                      <div
+                        key={p.userId}
+                        role="group"
                         className={cn(
-                          'flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition',
+                          'relative flex items-center gap-2 rounded-full border px-3 py-1.5 pr-1 text-sm transition',
                           isSelected
                             ? 'border-primary bg-primary/10'
                             : 'border-border bg-background hover:bg-muted'
                         )}
-                        onClick={() => {
-                          setSelectedUserId(u.id);
-                          setError('');
-                        }}
                       >
-                        <span className="inline-flex items-center justify-center rounded-full bg-muted overflow-hidden h-7 w-7">
-                          {avatarUrl ? (
-                            <img
-                              src={avatarUrl}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <UserIcon className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </span>
-                        <span>{u.username}</span>
-                      </button>
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                          onClick={() => {
+                            setSelectedUserId(p.userId);
+                            setError('');
+                          }}
+                        >
+                          <span className="relative inline-flex items-center justify-center rounded-full bg-muted overflow-hidden h-8 w-8 shrink-0">
+                            {avatarUrl ? (
+                              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <UserIcon className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </span>
+                          <span className="flex flex-col min-w-0">
+                            <span className="font-medium truncate">{p.username}</span>
+                            {p.email ? (
+                              <span className="text-xs text-muted-foreground truncate">{p.email}</span>
+                            ) : null}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="h-6 w-6 rounded-full bg-destructive/80 text-destructive-foreground flex items-center justify-center hover:bg-destructive shrink-0"
+                          aria-label="Remove profile from list"
+                          onClick={(e) => handleRemoveProfile(p.userId, e)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
               )}
             </div>
-            <PasswordField
-              id="auth-login-password"
-              label="Password"
-              value={password}
-              onChange={setPassword}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setMode('signup');
-                  setError('');
-                }}
-              >
-                Create new account
-              </Button>
-              <Button
-                type="button"
-                onClick={handleLogin}
-                disabled={submitting || !selectedUserId || !password}
-              >
-                {submitting ? 'Logging in...' : 'Login'}
-              </Button>
-            </div>
+            {!showOtherAccount ? (
+              <>
+                <PasswordField
+                  id="auth-login-password"
+                  label="Password"
+                  value={password}
+                  onChange={setPassword}
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setMode('signup');
+                        setError('');
+                      }}
+                    >
+                      Create new account
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowOtherAccount(true);
+                        setError('');
+                      }}
+                    >
+                      Use different account
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleLogin}
+                    disabled={submitting || !selectedUserId || !password}
+                  >
+                    {submitting ? 'Logging in...' : 'Login'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3 border-t border-border pt-3">
+                <p className="text-sm text-muted-foreground">Log in with username and password</p>
+                <div className="space-y-2">
+                  <Label htmlFor="auth-other-username" className="text-sm font-medium">Username</Label>
+                  <Input
+                    id="auth-other-username"
+                    value={otherUsername}
+                    onChange={(e) => setOtherUsername(e.target.value)}
+                  />
+                </div>
+                <PasswordField
+                  id="auth-other-password"
+                  label="Password"
+                  value={otherPassword}
+                  onChange={setOtherPassword}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setShowOtherAccount(false);
+                      setOtherUsername('');
+                      setOtherPassword('');
+                      setError('');
+                    }}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleLoginByUsername}
+                    disabled={submitting || !otherUsername.trim() || !otherPassword}
+                  >
+                    {submitting ? 'Logging in...' : 'Log in'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

@@ -31,7 +31,34 @@ CREATE TABLE IF NOT EXISTS tasks (
   color TEXT,
   table_id TEXT,
   scheduled_date TEXT,
-  table_order INTEGER
+  table_order INTEGER,
+  category_id INTEGER
+);
+
+-- Categories: macro-level grouping, one per task. User-scoped.
+CREATE TABLE IF NOT EXISTS categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, name)
+);
+
+-- Tags: micro-level grouping, many per task. User-scoped.
+CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, name)
+);
+
+-- Junction: task_id <-> tag_id (many-to-many).
+CREATE TABLE IF NOT EXISTS task_tags (
+  task_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  PRIMARY KEY (task_id, tag_id)
 );
 
 -- Event: something that happens at a specific time.

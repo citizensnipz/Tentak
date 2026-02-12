@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { X, Plus } from 'lucide-react';
+import { DEFAULT_TASK_COLOR } from '@/lib/board-utils';
 
 export function DayView({ date, onDateChange, tasks, loading, error, onDelete, onNewTask, onToggleCompletion }) {
   return (
@@ -35,14 +36,20 @@ export function DayView({ date, onDateChange, tasks, loading, error, onDelete, o
           ) : (
             tasks.map((task) => {
               const isCompleted = task.status === 'completed';
+              const headerColor = task.category?.color ?? task.color ?? DEFAULT_TASK_COLOR;
               return (
                 <li
                   key={task.id}
                   className={cn(
-                    "flex items-start gap-2 p-3 rounded-lg border border-border bg-card text-card-foreground",
+                    "flex items-start gap-2 p-0 rounded-lg border border-border bg-card text-card-foreground overflow-hidden",
                     isCompleted && "opacity-60"
                   )}
                 >
+                  <div
+                    className="w-1.5 shrink-0 self-stretch"
+                    style={{ backgroundColor: headerColor }}
+                    aria-hidden
+                  />
                   {onToggleCompletion && (
                     <input
                       type="checkbox"
@@ -51,11 +58,11 @@ export function DayView({ date, onDateChange, tasks, loading, error, onDelete, o
                         e.stopPropagation();
                         onToggleCompletion(task.id, !isCompleted);
                       }}
-                      className="h-4 w-4 mt-0.5 cursor-pointer shrink-0"
+                      className="h-4 w-4 mt-3 ml-2 cursor-pointer shrink-0"
                       aria-label={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
                     />
                   )}
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 py-3 pr-2">
                     <span className={cn(
                       "font-medium text-sm",
                       isCompleted && "line-through"
@@ -70,12 +77,24 @@ export function DayView({ date, onDateChange, tasks, loading, error, onDelete, o
                         {task.description}
                       </p>
                     )}
+                    {(task.tags?.length > 0) && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {(task.tags || []).map((tag) => (
+                          <span
+                            key={tag.id}
+                            className="inline-flex px-2 py-0.5 rounded text-xs bg-muted/60 text-muted-foreground"
+                          >
+                            {tag.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="h-8 w-8 shrink-0 mt-2"
                     onClick={() => onDelete(task.id)}
                     aria-label="Delete task"
                   >

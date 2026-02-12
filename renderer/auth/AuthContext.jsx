@@ -1,11 +1,26 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   const isAuthenticated = !!currentUser;
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.tentak?.profile?.get) {
+      setSessionChecked(true);
+      return;
+    }
+    window.tentak.profile
+      .get()
+      .then((res) => {
+        if (res?.ok && res.data) setCurrentUser(res.data);
+      })
+      .catch(() => {})
+      .finally(() => setSessionChecked(true));
+  }, []);
 
   const logout = async () => {
     try {
@@ -23,6 +38,7 @@ export function AuthProvider({ children }) {
     currentUser,
     setCurrentUser,
     isAuthenticated,
+    sessionChecked,
     logout,
   };
 

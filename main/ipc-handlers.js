@@ -8,6 +8,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { pathToFileURL } from 'url';
 import crypto from 'crypto';
+import { readJson, writeJson, FILES } from './storage.js';
 
 const __dirnameIpc = dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = join(__dirnameIpc, '..', 'assets');
@@ -19,6 +20,14 @@ import {
   getAllTables,
   getAllTasks,
   getTasksByScheduledDate,
+  getCategoriesByUser,
+  getTagsByUser,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  createTag,
+  updateTag,
+  deleteTag,
   createTask,
   updateTask,
   deleteTask,
@@ -44,8 +53,14 @@ import {
 } from '../backend/dist/backend/index.js';
 import { runClawdbot } from '../agent/runClawdbot.js';
 
-const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting', 'allTables', 'allTasks', 'tasksByScheduledDate'];
+const QUERY_TYPES = ['scheduleToday', 'tasksBacklog', 'tasksScheduled', 'tasksWaiting', 'allTables', 'allTasks', 'tasksByScheduledDate', 'categoriesByUser', 'tagsByUser'];
 const MUTATE_OPERATIONS = [
+  'categoryCreate',
+  'categoryUpdate',
+  'categoryDelete',
+  'tagCreate',
+  'tagUpdate',
+  'tagDelete',
   'taskCreate',
   'taskUpdate',
   'taskDelete',
@@ -61,6 +76,17 @@ const MUTATE_OPERATIONS = [
 ];
 
 let currentUserId = null;
+
+/**
+ * Restore session from session.json if valid (user still exists). Call before registerIpcHandlers.
+ */
+export function restoreSessionFromStorage(db, userDataPath) {
+  const session = readJson(userDataPath, FILES.SESSION);
+  if (!session || typeof session.userId !== 'number' || typeof session.sessionToken !== 'string') return;
+  const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(session.userId);
+  if (userExists) currentUserId = session.userId;
+  else writeJson(userDataPath, FILES.SESSION, {}); // clear invalid session
+}
 
 function wrap(handler) {
   return async (_event, payload) => {
@@ -109,6 +135,10 @@ export function registerIpcHandlers(db, userDataPath) {
           const date = params.date ?? new Date().toISOString().slice(0, 10);
           return getTasksByScheduledDate(db, date, userId);
         }
+        case 'categoriesByUser':
+          return getCategoriesByUser(db, userId);
+        case 'tagsByUser':
+          return getTagsByUser(db, userId);
         default:
           throw new Error(`Unknown query type: ${type}`);
       }
@@ -130,6 +160,42 @@ export function registerIpcHandlers(db, userDataPath) {
       const userId = getActiveUserId();
       let result;
       switch (operation) {
+        case 'categoryCreate':
+          result = createCategory(db, userId, opPayload);
+          await triggerBackup(userId);
+          return result;
+        case 'categoryUpdate': {
+          const { id, ...data } = opPayload;
+          if (id == null) throw new Error('categoryUpdate requires id');
+          result = updateCategory(db, userId, Number(id), data);
+          await triggerBackup(userId);
+          return result;
+        }
+        case 'categoryDelete': {
+          const id = opPayload.id;
+          if (id == null) throw new Error('categoryDelete requires id');
+          deleteCategory(db, userId, Number(id));
+          await triggerBackup(userId);
+          return null;
+        }
+        case 'tagCreate':
+          result = createTag(db, userId, opPayload);
+          await triggerBackup(userId);
+          return result;
+        case 'tagUpdate': {
+          const { id, ...data } = opPayload;
+          if (id == null) throw new Error('tagUpdate requires id');
+          result = updateTag(db, userId, Number(id), data);
+          await triggerBackup(userId);
+          return result;
+        }
+        case 'tagDelete': {
+          const id = opPayload.id;
+          if (id == null) throw new Error('tagDelete requires id');
+          deleteTag(db, userId, Number(id));
+          await triggerBackup(userId);
+          return null;
+        }
         case 'taskCreate':
           result = createTask(db, userId, opPayload);
           await triggerBackup(userId);
@@ -363,6 +429,8 @@ export function registerIpcHandlers(db, userDataPath) {
          FROM users WHERE id = ?`
       )
       .get(id);
+    saveSession(id);
+    addToRememberedProfiles(user);
     return user;
   }));
 
@@ -422,12 +490,92 @@ export function registerIpcHandlers(db, userDataPath) {
          FROM users WHERE id = ?`
       )
       .get(id);
+    saveSession(id);
+    addToRememberedProfiles(user);
     return user;
   }));
 
   ipcMain.handle('tentak:auth:logout', wrap(() => {
     currentUserId = null;
+    writeJson(userDataPath, FILES.SESSION, {});
     return null;
+  }));
+
+  function addToRememberedProfiles(user) {
+    const list = readJson(userDataPath, FILES.REMEMBERED_PROFILES) || [];
+    if (list.some((p) => p.userId === user.id)) return;
+    list.push({
+      userId: user.id,
+      username: user.username,
+      email: user.email ?? '',
+      avatarPath: user.avatar_path ?? '',
+    });
+    writeJson(userDataPath, FILES.REMEMBERED_PROFILES, list);
+  }
+
+  function saveSession(userId) {
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    writeJson(userDataPath, FILES.SESSION, { userId, sessionToken });
+  }
+
+  ipcMain.handle('tentak:auth:getRememberedProfiles', wrap(() => {
+    const list = readJson(userDataPath, FILES.REMEMBERED_PROFILES) || [];
+    return list;
+  }));
+
+  ipcMain.handle('tentak:auth:loginByUsername', wrap((payload) => {
+    const { username, password } = payload ?? {};
+    if (typeof username !== 'string' || !username.trim()) throw new Error('Username is required');
+    if (typeof password !== 'string' || !password) throw new Error('Password is required');
+    const row = db
+      .prepare(
+        `SELECT id, username, password_hash, password_salt FROM users WHERE username = ?`
+      )
+      .get(username.trim());
+    if (!row) throw new Error('User not found');
+    const id = row.id;
+    if (!row.password_hash || !row.password_salt) {
+      const saltBuf = crypto.randomBytes(16);
+      const saltHex = saltBuf.toString('hex');
+      const hashBuf = crypto.pbkdf2Sync(password, saltHex, 100000, 64, 'sha512');
+      const hashHex = hashBuf.toString('hex');
+      const now = new Date().toISOString();
+      db.prepare(
+        `UPDATE users SET password_hash = ?, password_salt = ?, last_login_at = ?, updated_at = ? WHERE id = ?`
+      ).run(hashHex, saltHex, now, now, id);
+    } else {
+      const expectedBuf = Buffer.from(row.password_hash, 'hex');
+      const actualBuf = crypto.pbkdf2Sync(password, row.password_salt, 100000, 64, 'sha512');
+      if (expectedBuf.length !== actualBuf.length || !crypto.timingSafeEqual(expectedBuf, actualBuf)) {
+        throw new Error('Invalid password');
+      }
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?`).run(now, now, id);
+    }
+    currentUserId = id;
+    const user = db
+      .prepare(
+        `SELECT id, username, email, avatar_path, created_at, updated_at, last_backup_at, last_login_at FROM users WHERE id = ?`
+      )
+      .get(id);
+    saveSession(id);
+    addToRememberedProfiles(user);
+    return user;
+  }));
+
+  ipcMain.handle('tentak:auth:removeRememberedProfile', wrap((payload) => {
+    const userId = Number(payload?.userId);
+    if (!userId || Number.isNaN(userId)) throw new Error('userId required');
+    const list = readJson(userDataPath, FILES.REMEMBERED_PROFILES) || [];
+    const next = list.filter((p) => p.userId !== userId);
+    writeJson(userDataPath, FILES.REMEMBERED_PROFILES, next);
+    const session = readJson(userDataPath, FILES.SESSION);
+    const wasCurrentUser = session?.userId === userId;
+    if (wasCurrentUser) {
+      currentUserId = null;
+      writeJson(userDataPath, FILES.SESSION, {});
+    }
+    return { wasCurrentUser };
   }));
 
   // Secure settings: OpenAI API key management.

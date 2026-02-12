@@ -81,6 +81,37 @@ export function openDb(dbPath: string): Db {
     } catch {
       /* column already exists */
     }
+    try {
+      db.exec('ALTER TABLE tasks ADD COLUMN category_id INTEGER');
+    } catch {
+      /* column already exists */
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (user_id, name)
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (user_id, name)
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS task_tags (
+        task_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (task_id, tag_id)
+      )
+    `);
     ensureChatMessagesTable(db);
     runUserMigration(db);
     const defaultUserId = getDefaultOrFirstUserId(db);

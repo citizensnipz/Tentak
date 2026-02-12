@@ -70,7 +70,7 @@ export function useTaskActions({
   }, [view, fetchDayTasks, isAuthenticated]);
 
   const createTask = useCallback(
-    ({ title, description, color, scheduled_date }) => {
+    ({ title, description, color, scheduled_date, category_id, tag_ids }) => {
       if (typeof window.tentak === 'undefined') {
         return Promise.reject(new Error('window.tentak not available'));
       }
@@ -89,6 +89,8 @@ export function useTaskActions({
             description,
             color: color || null,
             scheduled_date: scheduled_date || null,
+            category_id: category_id ?? null,
+            tag_ids: tag_ids ?? [],
             status: 'pending',
             kind: 'backlog',
             priority: 'normal',

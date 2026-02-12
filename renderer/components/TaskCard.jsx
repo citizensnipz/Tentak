@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { X, Pencil, GripVertical } from 'lucide-react';
+import { X, Pencil, GripVertical, ChevronDown } from 'lucide-react';
 import { ColorPicker } from './ColorPicker';
 import { DEFAULT_TASK_COLOR, CARD_WIDTH, getTextColorForBackground } from '@/lib/board-utils';
 
@@ -28,6 +28,10 @@ export function TaskCard({
   const [editDescription, setEditDescription] = useState('');
   const [editColor, setEditColor] = useState('');
   const [editScheduledDate, setEditScheduledDate] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState(null);
+  const [editTagIds, setEditTagIds] = useState(new Set());
+  const [categories, setCategories] = useState([]);
+  const [tags, setTags] = useState([]);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [internalCollapsed, setInternalCollapsed] = useState(true);
   const titleInputRef = useRef(null);
@@ -39,7 +43,12 @@ export function TaskCard({
     ? onToggleExpand
     : () => setInternalCollapsed((c) => !c);
 
-  const headerColor = task.color || DEFAULT_TASK_COLOR;
+  const displayColor = task.category?.color ?? task.color ?? DEFAULT_TASK_COLOR;
+  const editDisplayColor = (() => {
+    const cat = categories.find((c) => c.id === editCategoryId);
+    return cat?.color ?? editColor ?? DEFAULT_TASK_COLOR;
+  })();
+  const headerColor = isEditing ? editDisplayColor : displayColor;
   const headerTextColor = getTextColorForBackground(headerColor);
   const isCompleted = task.status === 'completed';
 
@@ -49,15 +58,20 @@ export function TaskCard({
     setEditDescription(task.description || '');
     setEditColor(task.color || DEFAULT_TASK_COLOR);
     setEditScheduledDate(task.scheduled_date || '');
+    setEditCategoryId(task.category?.id ?? task.category_id ?? null);
+    setEditTagIds(new Set((task.tags ?? []).map((t) => t.id)));
     setShowColorPicker(false);
-    // Ensure the card is expanded when editing in uncontrolled mode.
-    // In controlled mode, the parent owns expansion state, and we avoid toggling it here
-    // to prevent conflicts that can cause flashing.
-    if (!isControlled) {
-      setInternalCollapsed(false);
+    if (typeof window?.tentak !== 'undefined') {
+      window.tentak.query({ type: 'categoriesByUser' }).then((r) => {
+        if (r.ok) setCategories(r.data ?? []);
+      });
+      window.tentak.query({ type: 'tagsByUser' }).then((r) => {
+        if (r.ok) setTags(r.data ?? []);
+      });
     }
+    if (!isControlled) setInternalCollapsed(false);
     titleInputRef.current?.focus();
-  }, [isEditing, task.title, task.description, task.color, task.scheduled_date, isControlled]);
+  }, [isEditing, task.title, task.description, task.color, task.scheduled_date, task.category, task.category_id, task.tags, isControlled]);
 
   function handleCancelEdit() {
     setShowColorPicker(false);
@@ -66,6 +80,8 @@ export function TaskCard({
     setEditDescription('');
     setEditColor('');
     setEditScheduledDate('');
+    setEditCategoryId(null);
+    setEditTagIds(new Set());
   }
 
   useEffect(() => {
@@ -85,16 +101,22 @@ export function TaskCard({
     const desc = editDescription.trim() || null;
     const color = editColor || null;
     const sched = editScheduledDate.trim() || null;
+    const catId = editCategoryId ?? null;
+    const tagIdList = [...editTagIds];
+    const prevCatId = task.category?.id ?? task.category_id ?? null;
+    const prevTagIds = (task.tags ?? []).map((x) => x.id).sort();
     const changed =
       t !== task.title ||
       desc !== (task.description || null) ||
       (color || DEFAULT_TASK_COLOR) !== (task.color || DEFAULT_TASK_COLOR) ||
-      sched !== (task.scheduled_date || null);
+      sched !== (task.scheduled_date || null) ||
+      catId !== prevCatId ||
+      JSON.stringify(tagIdList.sort()) !== JSON.stringify(prevTagIds);
     if (!changed) {
       setIsEditing(false);
       return;
     }
-    onUpdate(task.id, { title: t, description: desc, color: color || null, scheduled_date: sched });
+    onUpdate(task.id, { title: t, description: desc, color: color || null, scheduled_date: sched, category_id: catId, tag_ids: tagIdList });
     setIsEditing(false);
   }
 
@@ -134,8 +156,8 @@ export function TaskCard({
           isCompleted && !isEditing && "opacity-60"
         )}
         style={{
-          backgroundColor: isEditing ? editColor || DEFAULT_TASK_COLOR : headerColor,
-          color: isEditing ? getTextColorForBackground(editColor || DEFAULT_TASK_COLOR) : headerTextColor,
+          backgroundColor: headerColor,
+          color: headerTextColor,
         }}
         onClick={() => {
           if (isEditing) return;
@@ -227,28 +249,66 @@ export function TaskCard({
         <div className="p-3 min-h-11">
         {isEditing ? (
           <>
-            <div className="mb-2 flex items-center gap-2 relative">
-              <Popover open={showColorPicker} onOpenChange={setShowColorPicker}>
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
                     variant="secondary"
                     size="sm"
-                    className="h-8"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                    }}
+                    className="h-7 text-xs"
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    Change color
+                    {categories.find((c) => c.id === editCategoryId)?.name ?? 'Category'}
+                    <ChevronDown className="h-3 w-3 ml-1" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent
-                  className="w-auto p-2"
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
+                <PopoverContent className="w-48 p-1" onClick={(e) => e.stopPropagation()}>
+                  <button type="button" className="w-full px-2 py-1.5 text-left text-sm hover:bg-accent rounded" onClick={() => setEditCategoryId(null)}>None</button>
+                  {categories.map((c) => (
+                    <button key={c.id} type="button" className="w-full px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2 rounded" onClick={() => setEditCategoryId(c.id)}>
+                      <span className="h-3 w-3 rounded shrink-0 border" style={{ backgroundColor: c.color }} />
+                      {c.name}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    Tags ({editTagIds.size})
+                    <ChevronDown className="h-3 w-3 ml-1" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 max-h-40 overflow-y-auto p-1" onClick={(e) => e.stopPropagation()}>
+                  {tags.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={cn('w-full px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2 rounded', editTagIds.has(t.id) && 'bg-accent')}
+                      onClick={() => setEditTagIds((prev) => { const n = new Set(prev); if (n.has(t.id)) n.delete(t.id); else n.add(t.id); return n; })}
+                    >
+                      <span className={cn('h-3 w-3 rounded border shrink-0', editTagIds.has(t.id) ? 'bg-primary border-primary' : 'border-border')} />
+                      {t.name}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+              <Popover open={showColorPicker} onOpenChange={setShowColorPicker}>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); e.preventDefault(); }} onPointerDown={(e) => e.stopPropagation()}>
+                    Color
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-2" onClick={(e) => e.stopPropagation()}>
                   <ColorPicker value={editColor} onChange={setEditColor} />
                 </PopoverContent>
               </Popover>
@@ -308,11 +368,23 @@ export function TaskCard({
           <>
             {task.description && (
               <span className={cn(
-                "text-sm text-muted-foreground leading-snug",
+                "text-sm text-muted-foreground leading-snug block",
                 isCompleted && "opacity-60"
               )}>
                 {task.description}
               </span>
+            )}
+            {(task.tags?.length > 0) && !isCollapsed && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {(task.tags || []).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex px-2 py-0.5 rounded text-xs bg-muted/60 text-muted-foreground"
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
             )}
             {!isCollapsed && (
               <Button

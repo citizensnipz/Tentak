@@ -61,6 +61,15 @@ contextBridge.exposeInMainWorld('tentak', {
     listUsers() {
       return ipcRenderer.invoke('tentak:auth:listUsers');
     },
+    getRememberedProfiles() {
+      return ipcRenderer.invoke('tentak:auth:getRememberedProfiles');
+    },
+    removeRememberedProfile(payload) {
+      return ipcRenderer.invoke('tentak:auth:removeRememberedProfile', payload);
+    },
+    loginByUsername(payload) {
+      return ipcRenderer.invoke('tentak:auth:loginByUsername', payload);
+    },
     signup(payload) {
       return ipcRenderer.invoke('tentak:auth:signup', payload);
     },

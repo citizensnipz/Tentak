@@ -17,6 +17,21 @@ export type TaskStatus = 'pending' | 'waiting' | 'completed' | 'cancelled';
 export type TaskKind = 'scheduled' | 'backlog' | 'external_dependency' | 'someday';
 export type TaskPriority = 'low' | 'normal' | 'high';
 
+export interface Category {
+  id: number;
+  user_id: number;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface Tag {
+  id: number;
+  user_id: number;
+  name: string;
+  created_at: string;
+}
+
 export interface Task {
   id: number;
   title: string;
@@ -34,6 +49,12 @@ export interface Task {
   scheduled_date?: string | null;
   /** Order index within the table (for snapped cards). Null for free-floating cards. */
   table_order?: number | null;
+  /** Category id. If category is deleted, set to null. */
+  category_id?: number | null;
+  /** Full category object when fetched (joined). */
+  category?: Category | null;
+  /** Full tag objects when fetched (joined). */
+  tags?: Tag[];
 }
 
 export type EventKind = 'meeting' | 'personal' | 'reminder' | 'block';

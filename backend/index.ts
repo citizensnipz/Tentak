@@ -14,6 +14,18 @@ export {
 } from './queries.js';
 export { buildAgentContext, type AgentContext } from './agentContext.js';
 export {
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  getCategoriesByUser,
+} from './categories.js';
+export {
+  createTag,
+  updateTag,
+  deleteTag,
+  getTagsByUser,
+} from './tags.js';
+export {
   createTask,
   updateTask,
   deleteTask,

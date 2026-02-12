@@ -15,6 +15,7 @@ import { CreateTableModal } from './components/modals/CreateTableModal';
 import { BoardView } from './views/BoardView';
 import { DayView } from './views/DayView';
 import { ChatView } from './views/ChatView';
+import { PersonalizationView } from './views/PersonalizationView';
 import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
 import { useTaskActions } from './hooks/useTaskActions';
@@ -49,7 +50,7 @@ function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const cameraRef = useRef(null);
   const todayStr = new Date().toISOString().slice(0, 10);
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, sessionChecked, logout } = useAuth();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -114,7 +115,7 @@ function App() {
     <div
       className={cn(
         'h-screen overflow-hidden relative',
-        !isAuthenticated && 'pointer-events-none select-none blur-sm'
+        sessionChecked && !isAuthenticated && 'pointer-events-none select-none blur-sm'
       )}
     >
       <NavigationDrawer
@@ -167,6 +168,7 @@ function App() {
           />
         )}
         {view === 'chat' && <ChatView />}
+        {view === 'personalization' && <PersonalizationView />}
         {view === 'profile' && <ProfileView />}
         {view === 'settings' && (
           <SettingsView

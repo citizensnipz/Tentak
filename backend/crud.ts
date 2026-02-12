@@ -14,6 +14,8 @@ import type {
   ReminderTargetType,
   Table,
 } from '../shared/types.js';
+import { enrichTasksWithCategoryAndTags } from './queries.js';
+import type { TaskRow } from './queries.js';
 
 const TASK_STATUSES: TaskStatus[] = [
   'pending',
@@ -45,8 +47,10 @@ function assert(
 
 // --- Task ---
 
-export type TaskInsert = Omit<Task, 'id' | 'created_at'> & {
+export type TaskInsert = Omit<Task, 'id' | 'created_at' | 'category' | 'tags'> & {
   created_at?: string;
+  category_id?: number | null;
+  tag_ids?: number[];
 };
 
 export function createTask(
@@ -59,10 +63,16 @@ export function createTask(
   assert(TASK_KINDS.includes(data.kind), `Invalid task kind: ${data.kind}`);
   assert(TASK_PRIORITIES.includes(data.priority), `Invalid task priority: ${data.priority}`);
 
+  const category_id = data.category_id ?? null;
+  if (category_id != null) {
+    const cat = db.prepare('SELECT id FROM categories WHERE id = ? AND user_id = ?').get(category_id, userId);
+    assert(cat !== undefined, `Category not found: ${category_id}`);
+  }
+
   const created_at = data.created_at ?? new Date().toISOString();
   const stmt = db.prepare(`
-    INSERT INTO tasks (user_id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (user_id, title, description, status, kind, priority, created_at, completed_at, related_event_id, external_owner, color, table_id, scheduled_date, table_order, category_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     userId,
@@ -78,17 +88,34 @@ export function createTask(
     data.color ?? null,
     data.table_id ?? null,
     data.scheduled_date ?? null,
-    data.table_order ?? null
+    data.table_order ?? null,
+    category_id
   );
-  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task & { user_id?: number };
-  const { user_id: _u, ...task } = row;
+  const taskId = Number(result.lastInsertRowid);
+
+  const tag_ids = data.tag_ids ?? [];
+  if (tag_ids.length > 0) {
+    const insertTag = db.prepare('INSERT INTO task_tags (task_id, tag_id) VALUES (?, ?)');
+    for (const tagId of tag_ids) {
+      const tag = db.prepare('SELECT id FROM tags WHERE id = ? AND user_id = ?').get(tagId, userId);
+      assert(tag !== undefined, `Tag not found: ${tagId}`);
+      insertTag.run(taskId, tagId);
+    }
+  }
+
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as TaskRow & { user_id?: number };
+  const [enriched] = enrichTasksWithCategoryAndTags(db, userId, [row]) as (Task & { user_id?: number })[];
+  const { user_id: _u, ...task } = enriched;
   return task as Task;
 }
 
-export type TaskUpdate = Partial<Omit<Task, 'id'>>;
+export type TaskUpdate = Partial<Omit<Task, 'id' | 'category' | 'tags'>> & {
+  category_id?: number | null;
+  tag_ids?: number[];
+};
 
 export function updateTask(db: Db, userId: number, id: number, data: TaskUpdate): Task {
-  const existing = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, userId) as (Task & { user_id?: number }) | undefined;
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, userId) as (Task & { user_id?: number; category_id?: number }) | undefined;
   assert(existing !== undefined, `Task not found: ${id}`);
 
   if (data.title !== undefined) {
@@ -98,13 +125,20 @@ export function updateTask(db: Db, userId: number, id: number, data: TaskUpdate)
   if (data.kind !== undefined) assert(TASK_KINDS.includes(data.kind), `Invalid task kind: ${data.kind}`);
   if (data.priority !== undefined) assert(TASK_PRIORITIES.includes(data.priority), `Invalid task priority: ${data.priority}`);
 
-  const merged: Task = {
+  const category_id = data.category_id !== undefined ? data.category_id : (existing.category_id ?? null);
+  if (category_id != null) {
+    const cat = db.prepare('SELECT id FROM categories WHERE id = ? AND user_id = ?').get(category_id, userId);
+    assert(cat !== undefined, `Category not found: ${category_id}`);
+  }
+
+  const merged: Task & { category_id?: number } = {
     ...existing,
     ...data,
     id: existing.id,
+    category_id: category_id ?? undefined,
   };
   db.prepare(`
-    UPDATE tasks SET title = ?, description = ?, status = ?, kind = ?, priority = ?, created_at = ?, completed_at = ?, related_event_id = ?, external_owner = ?, color = ?, table_id = ?, scheduled_date = ?, table_order = ?
+    UPDATE tasks SET title = ?, description = ?, status = ?, kind = ?, priority = ?, created_at = ?, completed_at = ?, related_event_id = ?, external_owner = ?, color = ?, table_id = ?, scheduled_date = ?, table_order = ?, category_id = ?
     WHERE id = ? AND user_id = ?
   `).run(
     merged.title,
@@ -120,15 +154,32 @@ export function updateTask(db: Db, userId: number, id: number, data: TaskUpdate)
     merged.table_id ?? null,
     merged.scheduled_date ?? null,
     merged.table_order ?? null,
+    category_id,
     id,
     userId
   );
-  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task & { user_id?: number };
-  const { user_id: _u, ...task } = row;
+
+  if (data.tag_ids !== undefined) {
+    db.prepare('DELETE FROM task_tags WHERE task_id = ?').run(id);
+    const tag_ids = data.tag_ids;
+    if (tag_ids.length > 0) {
+      const insertTag = db.prepare('INSERT INTO task_tags (task_id, tag_id) VALUES (?, ?)');
+      for (const tagId of tag_ids) {
+        const tag = db.prepare('SELECT id FROM tags WHERE id = ? AND user_id = ?').get(tagId, userId);
+        assert(tag !== undefined, `Tag not found: ${tagId}`);
+        insertTag.run(id, tagId);
+      }
+    }
+  }
+
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow & { user_id?: number };
+  const [enriched] = enrichTasksWithCategoryAndTags(db, userId, [row]) as (Task & { user_id?: number })[];
+  const { user_id: _u, ...task } = enriched;
   return task as Task;
 }
 
 export function deleteTask(db: Db, userId: number, id: number): void {
+  db.prepare('DELETE FROM task_tags WHERE task_id = ?').run(id);
   const result = db.prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?').run(id, userId);
   assert(result.changes > 0, `Task not found: ${id}`);
 }
